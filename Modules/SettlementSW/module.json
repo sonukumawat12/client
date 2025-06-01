@@ -1,0 +1,11 @@
+{
+  "name": "SettlementSW",
+  "alias": "SettlementSW",
+  "description": "Settlement SW standalone module",
+  "version": "1.0.0",
+  "active": true,
+  "order": 0,
+  "providers": [
+    "Modules\\SettlementSW\\Providers\\SettlementSWServiceProvider"
+  ]
+}

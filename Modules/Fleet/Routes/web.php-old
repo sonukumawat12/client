@@ -1,0 +1,58 @@
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register web routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| contains the "web" middleware group. Now create something great!
+|
+*/
+
+Route::group(['middleware' => ['web', 'auth', 'language','tenant.context'], 'prefix' => 'fleet-management'], function () {
+    Route::get('/fleet/view_opening_balance/{id}', 'FleetController@viewopeningbalance');
+    Route::get('/fleet/get-ledger/{id}', 'FleetController@getLedger');
+    Route::resource('/fleet', 'FleetController');
+    Route::post('/vehicle_check', 'FleetController@vehicle_check')->name('vehicle_check');
+    Route::get('/opening_balance', 'FleetController@opening_balance');
+    Route::get('/routes/get-details/{id}', 'RouteController@getDetails');
+    Route::get('/routes/get-dropdown', 'RouteController@getRouteDropdown');
+    Route::resource('/routes', 'RouteController');
+    Route::resource('/drivers', 'DriverController');
+    Route::resource('/account-nos', 'FleetAccountNumberController');
+    Route::resource('/fleet-logos', 'FleetLogoController');
+    Route::resource('/helpers', 'HelperController');
+    Route::resource('/settings', 'SettingController');
+    Route::get('/createIncentives', 'SettingController@createIncentives');
+    Route::get('/viewIncentive/{id}', 'RouteController@viewIncentive');
+    Route::get('/route-operation/get-by-fleet/{id}', 'RouteOperationController@getByFleetId'); 
+    Route::get('/actualmeter/{id}', 'RouteOperationController@actualmeter');
+    Route::post('/updateactualmeter/{id}', 'RouteOperationController@updateactualmeter')->name('updateactualmeter');
+    Route::get('/get-contact-ledger','RouteOperationController@fetchLedger');
+    
+    Route::get('/get-contact-ledger-summary','RouteOperationController@fetchLedgerSummarised');
+    
+    Route::get('/get-ro-advance/{id}','RouteOperationController@getRO_Advance');
+    
+    Route::get('/create-fleet-invoices','RouteOperationController@index_create');
+    
+    Route::get('/get-advance/{id}','RouteOperationController@RO_Advance');
+    Route::post('/post-advance','RouteOperationController@postRO_Advance');
+    Route::post('/insert-invoice','RouteOperationController@insert_fleetInvoice');
+    Route::get('/list-invoice','RouteOperationController@list_invoices');
+    Route::get('/list-invoices-nos/{id}','RouteOperationController@list_invoices_numbers');
+    Route::get('/print-invoice/{id}','RouteOperationController@printInvoice');
+    
+    Route::get('/get-ro-salary/{id}','RouteOperationController@getSal_Advance');
+    Route::get('/get-salary/{id}','RouteOperationController@RO_Salary');
+    Route::post('/post-salary','RouteOperationController@postSal_Advance');
+    
+    Route::resource('/route-operation', 'RouteOperationController');
+    Route::resource('/income', 'IncomeController');
+    Route::resource('/route-invoice-number', 'RouteInvoiceNumberController');
+    Route::resource('/route-products', 'RouteProductController');
+    Route::resource('/original-locations', 'OriginalLocationsController');
+   
+});

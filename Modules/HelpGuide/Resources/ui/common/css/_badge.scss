@@ -1,0 +1,54 @@
+
+.badge-ticket-open {
+    background-color: $danger;
+    color: white;
+}
+
+.badge-ticket-pending {
+    background-color: $warning;
+    color: white;
+}
+
+.badge-ticket-resolved {
+    background-color: $success;
+    color: white;
+}
+
+.badge-ticket-closed {
+    background-color: $secondary;
+    color: white;
+}
+
+.badge-orange {
+    color: #fff;
+    background-color: $orange;
+}
+
+.badge-counter {
+    padding: 0.3rem 0.5rem;
+    font-size: 1rem;
+    position: absolute;
+    -webkit-transform: scale(0.7);
+    transform: scale(0.7);
+    -webkit-transform-origin: top right;
+    transform-origin: top right;
+    right: 0.25rem;
+    margin-top: -0.25rem;
+}
+
+.badge-ticket-priority-low {
+    color: white;
+    background-color: $green;
+}
+.badge-ticket-priority-medium {
+    color: white;
+    background-color: $info;
+}
+.badge-ticket-priority-high {
+    color: white;
+    background-color: $orange;
+}
+.badge-ticket-priority-urgent {
+    color: white;
+    background-color: $danger;
+}

@@ -1,0 +1,88 @@
+/*--------------------------------------------------------------
+# Header
+--------------------------------------------------------------*/
+#header {
+  height: 80px;
+  transition: all 0.5s;
+  z-index: 997;
+  transition: all 0.5s;
+  padding: 20px 0;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.header-scrolled#header {
+    background: white;
+    box-shadow: 0px 0px 30px rgba(127, 137, 161, 0.3);
+}
+
+#header.header-scrolled,
+#header.header-pages {
+  height: 60px;
+  padding: 10px 0;
+}
+
+#header .logo h1 {
+  font-size: 36px;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+#header .logo h1 a,
+#header .logo h1 a:hover {
+  color: #00366f;
+  text-decoration: none;
+}
+
+#header .logo img {
+  padding: 0;
+  margin-top: -5px;
+  max-height: 50px;
+}
+
+
+.masthead {
+  position: relative;
+  background-color: $orange;
+  @include background-cover;
+  padding-top: 8rem;
+  padding-bottom: 8rem;
+  .overlay {
+    position: absolute;
+    background-color: $orange;
+    height: 100%;
+    width: 100%;
+    top: 0;
+    left: 0;
+    opacity: 0.3;
+    background-position: center;
+  }
+  h1 {
+    font-size: 2rem;
+  }
+  @media (min-width: 768px) {
+    padding-top: 12rem;
+    padding-bottom: 12rem;
+    h1 {
+      font-size: 3rem;
+    }
+  }
+}
+
+.section-heading {
+  padding: 30px 0px;
+  background-image: url(/images/pattern.svg);
+  background-color: #3f51b5 !important;
+}
+
+.homepage .section-heading {
+  padding: 180px 0px;
+}
+
+.homepage .section-heading {
+  padding: 100px 0px;
+}

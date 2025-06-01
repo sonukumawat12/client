@@ -1,0 +1,158 @@
+.btn:focus {
+    box-shadow: none;
+}
+
+.btn-link {
+    text-decoration: none;
+}
+
+.btn {
+    font-size: 0.95rem;
+}
+
+.card-header {
+    background-color: #ffffff;
+    border-bottom: 0;
+}
+
+.btn-danger {
+    color: #ffffff !important;
+}
+
+.btn-success {
+  color: #444;
+}
+
+.btn:focus {
+    outline: 0;
+    box-shadow: none;
+}
+
+.card-header {
+    background-color: white;
+}
+
+.card {
+    border: none;
+    -webkit-box-shadow: 0 0 35px 0 rgba(154, 161, 171, 0.15);
+    box-shadow: 0 0 35px 0 rgba(154, 161, 171, 0.15);
+    margin-bottom: 15px;
+}
+
+.badge {
+    padding: 0.4em 0.8em;
+    font-size: 1em;
+    font-weight: 100;
+}
+
+.btn-link,
+.btn-link:hover {
+    color: #495057;
+    text-decoration: none;
+}
+
+.card-header {
+    height: auto !important;
+    padding: 0.75rem 0.5rem !important;
+}
+
+.card-footer {
+    padding: 0.5rem 0.5rem !important;
+}
+.nav-item .nav-link {
+    font-weight: normal;
+    color: #777;
+    border: none;
+}
+
+.nav-tabs .nav-item {
+    margin-bottom: -2px;
+}
+
+.nav-tabs {
+    border-bottom: 3px solid #777;
+}
+
+.nav-tabs .nav-link.active {
+    color: #fff;
+}
+
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-item.show .nav-link {
+    color: #fff;
+    background-color: #777;
+    border: none;
+}
+
+.nav-tabs .nav-link:hover {
+    color: #777 !important;
+}
+
+.nav-tabs .nav-link.active:hover {
+    color: #fff !important;
+}
+
+.nav-tabs .nav-link:hover,
+.nav-tabs .nav-link:focus {
+    border: none;
+}
+
+.nav-link {
+    padding: 0.5em;
+    text-decoration: none;
+}
+
+.card-header {
+    background-color: #f8f9fc;
+}
+
+.dropdown-item {
+    padding: 0.25rem 0.7rem;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background-color: #00000014;
+}
+
+.input-group-append {
+    z-index: 5;
+}
+
+.table th,
+.table td {
+    padding: 0.5rem;
+}
+
+.tooltip {
+    text-transform: capitalize;
+    pointer-events: none;
+}
+
+.modal {
+    -webkit-transform: scale(0.5);
+    -moz-transform: scale(0.5);
+    transform: scale(0.5);
+    transition: all;
+}
+.modal.fade.show {
+    -webkit-transform: scale(1);
+    -moz-transform: scale(1);
+    transform: scale(1);
+}
+.modal.fade {
+    opacity: 1;
+}
+.modal.fade .modal-dialog {
+    -webkit-transform: translate(0);
+    -moz-transform: translate(0);
+    transform: translate(0);
+}
+
+.form-group {
+    margin-bottom: 0.5rem;
+}
+
+.form-floating > label {
+    color: #858796;
+}

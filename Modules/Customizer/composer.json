@@ -1,0 +1,23 @@
+{
+    "name": "pandisoft/customizer",
+    "description": "",
+    "authors": [
+        {
+            "name": "Pandisoft",
+            "email": "pandisoft.com@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Customizer\\": ""
+        }
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "name": "nwimer/discount",
+    "description": "",
+    "authors": [
+        {
+            "name": "Meki Ermena",
+            "email": "mekiermena72@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Discount\\": ""
+        }
+    }
+}

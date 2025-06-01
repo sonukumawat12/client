@@ -1,0 +1,15 @@
+{
+    "/frontend/js/frontend.js": "/frontend/js/frontend.js",
+    "/ui/dashboard/js/dashboard.js": "/ui/dashboard/js/dashboard.js",
+    "/ui/customer/js/customer.js": "/ui/customer/js/customer.js",
+    "/common/css/libs.css": "/common/css/libs.css",
+    "/frontend/css/auth.css": "/frontend/css/auth.css",
+    "/common/css/icons.css": "/common/css/icons.css",
+    "/common/css/main.css": "/common/css/main.css",
+    "/ui/install/css/install.css": "/ui/install/css/install.css",
+    "/ui/customer/css/customer.css": "/ui/customer/css/customer.css",
+    "/ui/dashboard/css/dashboard.css": "/ui/dashboard/css/dashboard.css",
+    "/frontend/css/frontend.css": "/frontend/css/frontend.css",
+    "/common/css/fonts/bootstrap-icons.woff": "/common/css/fonts/bootstrap-icons.woff",
+    "/common/css/fonts/bootstrap-icons.woff2": "/common/css/fonts/bootstrap-icons.woff2"
+}

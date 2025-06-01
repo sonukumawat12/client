@@ -1,0 +1,52 @@
+<!-- Main content -->
+<section class="content">
+
+    @component('components.widget', ['class' => 'box-primary', 'title' => __('dsr::lang.provinces')])
+
+        @slot('tool')
+
+            <button type="button" class="btn  btn-primary btn-modal pull-right"
+
+                    data-href="{{action('\Modules\Superadmin\Http\Controllers\LocationsController@addProvince')}}"
+
+                    data-container=".provinces">
+
+                <i class="fa fa-flag"></i> @lang('dsr::lang.add_province')</button>
+
+        @endslot
+
+            <div class="col-md-12">
+
+            <div class="row" style="margin-top: 20px;">
+
+                <div class="table-responsive">
+
+                    <table class="table table-bordered table-striped" id="provinces_table" style="width: 100% !important;">
+
+                        <thead>
+
+                        <tr>
+
+                            <th>@lang('dsr::lang.country')</th>
+
+                            <th>@lang('dsr::lang.province')</th>
+
+                            <th>@lang('dsr::lang.created_at')</th>
+
+                        </tr>
+
+                        </thead>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+            </div>
+
+
+    @endcomponent
+
+</section>
+

@@ -1,0 +1,44 @@
+[20-Apr-2021 18:20:28 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi2/public_html/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi2/public_html/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 14:48:10 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 14:48:11 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 15:24:28 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 15:24:29 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 18:49:31 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 18:49:32 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 19:40:43 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 19:40:44 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 22:56:20 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14
+[10-Nov-2022 22:56:21 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/Manufacturing/start.php on line 14

@@ -1,0 +1,23 @@
+{
+    "name": "dsoft/loan",
+    "description": "",
+    "authors": [
+        {
+            "name": "DSOFT SOLUTIONS",
+            "email": "ultimateposlive@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\Loan\\Providers\\LoanServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Loan\\": ""
+        }
+    }
+}

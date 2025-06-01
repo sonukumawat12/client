@@ -1,0 +1,14 @@
+@extends('layouts.app')
+
+@section('content')
+    <section class="content-header">
+        <h1>@lang('crm::lang.crm_dashboard')</h1>
+    </section>
+
+    <section class="content">
+        <!-- Example content -->
+        <div class="alert alert-info">
+            Placeholder Page Content
+        </div>
+    </section>
+@endsection

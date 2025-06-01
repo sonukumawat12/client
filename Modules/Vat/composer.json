@@ -1,0 +1,25 @@
+{
+    "name": "twf/vat",
+    "description": "",
+    "authors": [
+        {
+            "name": "bohdan",
+            "email": "bohdansolovie@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\Vat\\Providers\\AssetManagementServiceProvider"
+            ],
+            "aliases": {
+                
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Vat\\": ""
+        }
+    }
+}

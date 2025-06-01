@@ -1,0 +1,44 @@
+[22-Apr-2021 16:26:00 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi2/public_html/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi2/public_html/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 14:48:53 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 14:48:54 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 15:25:13 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 15:25:14 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 18:50:17 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 18:50:18 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 19:41:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 19:41:36 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 22:57:31 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14
+[10-Nov-2022 22:57:32 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function app() in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/vimi10/public_html/244backup/3.244-10 nov 2022 - 1917.zip/Modules/TasksManagement/start.php on line 14

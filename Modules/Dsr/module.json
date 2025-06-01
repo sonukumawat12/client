@@ -1,0 +1,13 @@
+{
+    "name": "Dsr",
+    "alias": "dsr",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Dsr\\Providers\\DsrServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

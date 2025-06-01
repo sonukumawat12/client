@@ -1,0 +1,10 @@
+.breadcrumb {
+  background-color: #e9ecef00;
+  padding: 1em 0;
+  font-size: 1.2em;
+}
+
+.breadcrumb-item+.breadcrumb-item::before {
+  font-family: "bootstrap-icons" !important;
+  content: "\F138";
+}

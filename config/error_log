@@ -1,0 +1,24 @@
+[13-Nov-2024 16:40:34 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/vimi50/public_html/config/database.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/vimi50/public_html/config/database.php on line 16
+[13-Nov-2024 16:40:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/vimi50/public_html/config/database.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/vimi50/public_html/config/database.php on line 16
+[13-Nov-2024 16:40:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/vimi50/public_html/config/database.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/vimi50/public_html/config/database.php on line 16
+[13-Nov-2024 16:40:36 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/vimi50/public_html/config/database.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/vimi50/public_html/config/database.php on line 16
+[13-Nov-2024 16:40:38 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/vimi50/public_html/config/database.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/vimi50/public_html/config/database.php on line 16
+[13-Nov-2024 16:40:41 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/vimi50/public_html/config/database.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/vimi50/public_html/config/database.php on line 16

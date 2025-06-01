@@ -1,0 +1,23 @@
+{
+    "name": "syzygy/distribution",
+    "description": "",
+    "authors": [
+        {
+            "name": "Daniel",
+            "email": "daniel.mutuku404@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Distribution\\": ""
+        }
+    }
+}

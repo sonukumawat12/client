@@ -1,0 +1,13 @@
+{
+    "name": "EzyInvoice",
+    "alias": "ezyinvoice",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\EzyInvoice\\Providers\\EzyInvoiceServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

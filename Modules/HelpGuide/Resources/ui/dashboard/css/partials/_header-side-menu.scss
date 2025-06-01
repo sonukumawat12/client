@@ -1,0 +1,45 @@
+.headerMobileMenu {
+    display: none;
+    position: fixed;
+    height: 100vh;
+    z-index: 20;
+    right: 0;
+    background: #000000aa;
+    width: 100%;
+}
+
+.headerMobileMenuContainer {
+    background: white;
+    height: 100vh;
+    width: 15rem;
+    float: right;
+}
+
+.headerMobileMenu .tab-content ul {
+    padding: 0;
+}
+
+.headerMobileMenu  .HeaderMobileToggleBtn {
+    margin: 0.25rem 0.775rem 0 0;
+}
+
+.headerMobileMenuContent {
+    padding: 0rem 1rem 1rem 1rem;
+}
+
+@media screen and (max-width: 768px) {
+    .headerMobileMenu.is-open {
+        display: block;
+    }
+}
+
+@media screen and (max-width: 576px) {
+    .headerMobileMenu.is-open .headerMobileMenuContainer {
+        width: 100vw;
+    }
+}
+
+.app-header .app-logo img {
+    max-width: 120px;
+    max-height: 50px;
+}

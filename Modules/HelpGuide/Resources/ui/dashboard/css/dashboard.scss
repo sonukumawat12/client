@@ -1,0 +1,84 @@
+:root {
+    --page-header-bgColor: #1d1d1d;
+    --page-header-bgColor-hover: #fff;
+    --page-header-txtColor: #dde9f8;
+    --page-header-headingColor: #7889a4;
+
+    --border-radius: 4px;
+    --box-shadow: 0 0 10px -2px rgba(0, 0, 0, 0.075);
+
+    --sidebar-background-color: #fff;
+    --sidebar-text-color: #444;
+    --sidebar-width: 200px;
+
+    --bg-color: #eeeeee;
+    --text-color: #444444;
+}
+
+@import "./partials/settings";
+@import "./partials/sidebar";
+@import "./partials/header-side-menu";
+@import "./partials/modules";
+
+
+.page-sidebar .logo img {
+    max-width: 120px;
+    max-height: 50px;
+}
+
+/* PAGE CONTENT STYLES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+.page-content {
+    position: relative;
+    left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
+    min-height: 100vh;
+    color: var(--text-color);
+    background: var(--bg-color);
+    overflow: hidden;
+}
+
+@media (max-width: 576px) {
+    .page-content {
+        left: initial;
+        width: initial;
+    }
+}
+
+@media screen and (min-width: 576px) {
+    .collapsed .page-content {
+        left: 3.5em;
+        width: calc(100% - 3.5em);
+    }
+}
+
+/* FOOTER
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+.page-footer {
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.page-footer a {
+    margin-left: 4px;
+}
+
+.page-header {
+    z-index: 10;
+    width: 100%;
+}
+
+.main-content {
+    padding-top: 5rem;
+}
+
+.page-title {
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    text-transform: capitalize;
+    color: var(--text-color);
+}

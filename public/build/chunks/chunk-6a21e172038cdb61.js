@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunk=self.webpackChunk||[]).push([[8909],{8909:(e,n,s)=>{s.r(n),s.d(n,{default:()=>l});Vue.component("employees-list",(function(){return s.e(916).then(s.bind(s,916))}));const t={};const l=(0,s(1900).Z)(t,(function(){var e=this._self._c;return e("employees-list",[e("div",{staticClass:"preloader"})])}),[],!1,null,null,null).exports}}]);

@@ -1,0 +1,25 @@
+{
+    "name": "twf/PriceChanges",
+    "description": "",
+    "authors": [
+        {
+            "name": "The Web Fosters",
+            "email": "thewebfosters@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\PriceChanges\\Providers\\PriceChangesServiceProvider"
+            ],
+            "aliases": {
+                
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\PriceChanges\\": ""
+        }
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "name": "Stocktaking",
+    "alias": "Stocktaking",
+    "description": "",
+    "keywords": [],
+    "active": 1,
+    "order": 0,
+    "providers": [
+        "Modules\\Stocktaking\\Providers\\StocktakingServiceProvider"
+    ],
+    "aliases": {},
+    "files": [
+        "start.php"
+    ],
+    "requires": []
+}

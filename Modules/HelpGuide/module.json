@@ -1,0 +1,13 @@
+{
+    "name": "HelpGuide",
+    "alias": "helpguide",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\HelpGuide\\Providers\\HelpGuideServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

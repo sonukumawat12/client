@@ -1,0 +1,12 @@
+CREATE TABLE member_group_transfer_histories (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    member_id BIGINT UNSIGNED NOT NULL,
+    transferred_from VARCHAR(255) NULL,
+    transferred_to VARCHAR(255) NOT NULL,
+    transferred_by BIGINT UNSIGNED NOT NULL,
+    transferred_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+

@@ -1,0 +1,13 @@
+{
+    "name": "SalesDiscounts",
+    "alias": "salesdiscounts",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\SalesDiscounts\\Providers\\SalesDiscountsServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

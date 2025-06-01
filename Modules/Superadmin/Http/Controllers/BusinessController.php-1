@@ -1,0 +1,2266 @@
+<?php
+
+namespace Modules\Superadmin\Http\Controllers;
+
+use App\Account;
+use App\AccountGroup;
+use App\AccountTransaction;
+use App\DefaultProductCategory;
+use App\DefaultExpenseCategory;
+use App\Category;
+use App\ExpenseCategory;
+use App\Business;
+use App\BusinessCategory;
+use App\BusinessLocation;
+use App\CompanyPackasgeVariable;
+use App\Product;
+use App\Transaction;
+use App\User;
+use App\System;
+use App\Utils\BusinessUtil;
+use App\Utils\ModuleUtil;
+use App\VariationLocationDetails;
+;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Modules\Superadmin\Entities\GiveAwayGift;
+use Modules\Superadmin\Entities\ModulePermissionLocation;
+use Modules\Superadmin\Entities\Package;
+use Modules\Superadmin\Entities\Subscription;
+use Spatie\Permission\Models\Permission;
+use Modules\Superadmin\Entities\AccountNumber;
+use App\NotificationTemplate;
+
+use App\DefaultAccountType;
+use App\AccountType;
+use App\DefaultAccountGroup;
+
+use function GuzzleHttp\json_decode;
+
+class BusinessController extends BaseController
+{
+    protected $businessUtil;
+    protected $moduleUtil;
+
+    /**
+     * Constructor
+     *
+     * @param ProductUtils $product
+     * @return void
+     */
+    public function __construct(BusinessUtil $businessUtil, ModuleUtil $moduleUtil)
+    {
+        $this->businessUtil = $businessUtil;
+        $this->moduleUtil = $moduleUtil;
+    }
+    
+    public function updatePerms(){
+        $subscriptions = Subscription::groupBy('business_id')->orderBy('end_date','DESC')->get();
+        if(!empty($subscriptions)){
+            foreach($subscriptions as $one){
+                $package_details = $one->package_details;
+                
+                if(!empty($package_details)){
+                    $moudle_permissions = Subscription::getBusinessPermissionsArray();
+                        foreach ($moudle_permissions as $permission) {
+                            if (!array_key_exists($permission, $package_details)) {
+                                if (!empty($one)) {
+                                    $default_active = [
+                                                        '1_30_days',
+                                                        '31_45_days',
+                                                        '46_60_days',
+                                                        '61_90_days',
+                                                        'over_90_days',
+                                                    ];
+                                    if(in_array($permission,$default_active)){
+                                        $val = 1;
+                                    }else{
+                                        $val = 0;
+                                    }
+                                   Subscription::where('id', $one->id)->update(['package_details->' . $permission => $val]);
+                                }
+                            } 
+                        }
+                }
+                
+            }
+        }
+        
+    }
+    
+    public function notifyExpired(){
+        $subscriptions = Subscription::groupBy('business_id')->orderBy('end_date','DESC')->get();
+        if(!empty($subscriptions)){
+            foreach($subscriptions as $one){
+                $package_details = $one->package_details;
+                
+                // dd($package_details);
+                $diff = (strtotime($one->end_date) - strtotime(date('Y-m-d'))) / 86400;
+                // dd($diff);
+                if(
+                    !empty($package_details['message_content'])
+                    && !empty($package_details['reminder_phone'])
+                    && 
+                    (!empty($package_details['first_reminder']) || !empty($package_details['second_reminder']) || !empty($package_details['third_reminder'])) 
+                    &&
+                    ($package_details['first_reminder']  == $diff 
+                    || $package_details['second_reminder'] == $diff
+                    || $package_details['third_reminder'] == $diff)){
+                        
+                    $phones = json_decode($package_details['reminder_phone'],true);
+                    $business = Business::where('id', $one->business_id)->first();
+                    
+                    $sms_settings = empty($business->sms_settings) ? $this->businessUtil->defaultSmsSettings() : $business->sms_settings;
+                    foreach($phones as $phone){
+                        
+                        $data = [
+                            'sms_settings' => $sms_settings,
+                            'mobile_number' => $phone,
+                            'sms_body' => $package_details['message_content']
+                        ];
+                        $response = $this->businessUtil->superadminSendSms($data);
+                    }
+                }
+            }
+        }
+        
+    }
+    
+
+    /**
+     * Display a listing of the resource.
+     * @return Response
+     */
+    public function index(Request $request)
+    {
+        if (!auth()->user()->can('superadmin')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+
+
+        $business = Business::select(DB::raw("CONCAT(COALESCE(name, ''),' ',COALESCE(company_number, '')) AS company_name"), 'id')->get();
+
+        $date_today = \Carbon::today();
+
+        $businesses = Business::orderby('name')
+            ->with(['subscriptions' => function ($query) use ($date_today) {
+                $query->whereDate('start_date', '<=', $date_today)
+                    ->whereDate('end_date', '>=', $date_today);
+            }, 'locations', 'owner'])
+            ->paginate(21);
+
+        if ($request->post() && $request->filter_business != 0) {
+            $filter_business = $request->filter_business;
+            $businesses = Business::orderby('name')
+                ->with(['subscriptions' => function ($query) use ($date_today) {
+                    $query->whereDate('start_date', '<=', $date_today)
+                        ->whereDate('end_date', '>=', $date_today);
+                }, 'locations', 'owner'])
+                ->where('id', $filter_business)
+                ->paginate(21);
+        }
+
+        
+        // dd( $businesses->first()->toArray() );
+
+        $business_id = request()->session()->get('user.business_id');
+        
+        $patient_code = User::where('business_id', $business_id)->first();
+        return view('superadmin::business.index')
+            ->with(compact('businesses', 'business_id', 'business','patient_code'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     * @return Response
+     */
+    public function create()
+    {
+        if (!auth()->user()->can('superadmin')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $currencies = $this->businessUtil->allCurrencies();
+        $timezone_list = $this->businessUtil->allTimeZones();
+        $business_categories = BusinessCategory::pluck('category_name', 'id');
+
+        $accounting_methods = $this->businessUtil->allAccountingMethods();
+
+        $months = [];
+        for ($i = 1; $i <= 12; $i++) {
+            $months[$i] = __('business.months.' . $i);
+        }
+
+        $is_admin = true;
+
+        $show_give_away_gift_in_register_page = !empty(System::getProperty('show_give_away_gift_in_register_page')) ? System::getProperty('show_give_away_gift_in_register_page') : [];
+        $show_referrals_in_register_page = !empty(System::getProperty('show_referrals_in_register_page')) ? System::getProperty('show_referrals_in_register_page') : [];
+        $show_give_away_gift_in_register_page = json_decode($show_give_away_gift_in_register_page, true);
+        $show_referrals_in_register_page = json_decode($show_referrals_in_register_page, true);
+        $give_away_gifts_array = GiveAwayGift::pluck('name', 'id')->toArray();
+
+        $give_away_gifts = [];
+        foreach ($give_away_gifts_array as $key => $value) {
+            $give_away_gifts[$key] = $value;
+        }
+
+        return view('superadmin::business.create')
+            ->with(compact(
+                'currencies',
+                'timezone_list',
+                'business_categories',
+                'accounting_methods',
+                'show_referrals_in_register_page',
+                'months',
+                'is_admin',
+                'show_give_away_gift_in_register_page',
+                'show_referrals_in_register_page',
+                'give_away_gifts'
+            )); 
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     * @param  Request $request
+     * @return Response
+     */
+    public function store(Request $request)
+    {
+        if (!auth()->user()->can('superadmin')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        try {
+            DB::beginTransaction();
+            //Create owner.
+            $owner_details = $request->only(['surname', 'first_name', 'last_name', 'username', 'email', 'password']);
+            $owner_details['language'] = env('APP_LOCALE');
+ 
+            $user = User::create_user($owner_details);
+
+            $business_details = $request->only(['name', 'start_date', 'currency_id', 'tax_label_1', 'tax_number_1', 'tax_label_2', 'tax_number_2', 'time_zone', 'accounting_method', 'fy_start_month']);
+
+            $business_location = $request->only(['name', 'country', 'state', 'city', 'zip_code', 'landmark', 'website', 'mobile', 'alternate_number']);
+                     
+            $business_details['business_categories'] = !empty($request->business_categories) ? json_encode($request->business_categories) : json_encode([]);
+
+            $business_details['show_for_customers'] = !empty($request->show_for_customers) ? $request->show_for_customers : 0;
+            //Create the business
+            $business_details['owner_id'] = $user->id;
+            if (!empty($business_details['start_date'])) {
+                $business_details['start_date'] = $this->businessUtil->uf_date($business_details['start_date']);
+            }
+
+            //upload logo
+            $logo_name = $this->businessUtil->uploadFile($request, 'business_logo', 'business_logos');
+            if (!empty($logo_name)) {
+                $business_details['logo'] = $logo_name;
+            }
+            
+            $business = $this->businessUtil->createNewBusiness($business_details);
+
+            //Update user with business id
+            $user->business_id = $business->id;
+            $user->save();
+  
+            //add default account and account types for business
+            app('App\Http\Controllers\BusinessController')->addAccounts($business->id);
+            
+            // add Default Product Categories
+            $defaultProducts = DefaultProductCategory::all();
+            foreach ($defaultProducts as $value) {
+                $product_array = array(
+                    'name' => $value->name,
+                    'business_id' => $business->id,
+                    'short_code' => $value->short_code,
+                    'parent_id' => $value->parent_id,
+                    'category_type' => $value->category_type,
+                    'add_related_account' => $value->add_related_account,
+                     "cogs_account_id" => $value->cogs_account_id,
+                    "sales_income_account_id" => $value->sales_income_account_id,
+                    "weight_excess_loss_applicable" => $value->weight_excess_loss_applicable,
+                    "weight_loss_expense_account_id" => $value->weight_loss_expense_account_id,
+                    "weight_excess_income_account_id" => $value->weight_excess_income_account_id,
+                    "created_by" => $value->created_by,
+                    "description" => $value->description,
+                    "remaining_stock_adjusts" => $value->remaining_stock_adjusts,
+                    "price_increment_acc" => $value->price_increment_acc,
+                    "price_reduction_acc" => $value->price_reduction_acc,
+                    "nic" => $value->nic
+                );
+                Category::create($product_array);
+            }
+
+            // add Default Expense Categories
+            $defaultExpense = DefaultExpenseCategory::all();
+            foreach ($defaultExpense as $value) {
+                $expense_array = array(
+                    'name' => $value->name,
+                    'business_id' => $business->id,
+                    'code' => $value->short_code,
+                    'parent_id' => $value->parent_id,
+                    'expense_account' => $value->expense_account,
+                    'is_sub_category' => $value->is_sub_category,
+                    'payee_id' => $value->payee_id,
+                );
+                ExpenseCategory::create($expense_array);
+            }
+            
+            //add Account Numbers
+            $business_id = request()->session()->get('business.id');
+            $account_numbers = AccountNumber::where('business_id', $business_id)->get();
+            foreach ($account_numbers as $accountNumber) {
+                $data = [
+                    'business_id' => $business->id, // Assuming $newBusiness is the business where you want to copy the account numbers
+                    'account_type' => $accountNumber->account_type,
+                    'prefix' => $accountNumber->prefix,
+                    'account_number' => $accountNumber->account_number,
+                ];
+            
+                AccountNumber::create($data);
+            }
+            //add petro fuel category for business
+            $this->businessUtil->addPetroDefaults($business->id, $user->id);
+            
+            $this->businessUtil->newBusinessDefaultResources($business->id, $user->id);
+            $new_location = $this->businessUtil->addLocation($business->id, $business_location);
+
+            //set defualt number of pumps for location
+            ModulePermissionLocation::create(['business_id' => $business->id, 'module_name' => 'number_of_pumps', 'locations' => [$new_location->id => '12']]);
+
+            //create new permission with the new location
+            Permission::create(['name' => 'location.' . $new_location->id]);
+
+            DB::commit();
+
+            //Module function to be called after after business is created
+            if (config('app.env') != 'demo') {
+                $this->moduleUtil->getModuleData('after_business_created', ['business' => $business]);
+            }
+
+            $output = [
+                'success' => 1,
+                'msg' => __('business.business_created_succesfully')
+            ];
+
+            return redirect()
+                ->action('\Modules\Superadmin\Http\Controllers\BusinessController@index')
+                ->with('status', $output);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
+
+            $output = [
+                'success' => 0,
+                'msg' => __('messages.something_went_wrong')
+            ];
+
+            return back()->with('status', $output)->withInput();
+        }
+    }
+    /**
+     * Store a newly created hospital resource in storage.
+     * @param  Request $request
+     * @return Response
+     */
+    public function hospital_register(Request $request)
+    {
+        $startingHospitalPrefix = System::getProperty('hospital_prefix');
+        try {
+            DB::beginTransaction();
+
+            //Create owner.
+            $owner_details = $request->only(['surname', 'first_name', 'last_name', 'username', 'email', 'password']);
+            $owner_details['language'] = env('APP_LOCALE');
+
+            $user = User::create_user($owner_details);
+
+            $business_details = $request->only(['name', 'start_date', 'currency_id', 'tax_label_1', 'tax_number_1', 'tax_label_2', 'tax_number_2', 'time_zone', 'accounting_method', 'fy_start_month']);
+
+            $business_location = $request->only(['name', 'country', 'state', 'city', 'zip_code', 'landmark', 'website', 'mobile', 'alternate_number']);
+
+            //adding hospital business name prefix
+            $business_details['name'] = $startingHospitalPrefix . '' . $business_details['name'];
+            $business_details['is_hospital'] = 1;
+            //Create the business
+            $business_details['owner_id'] = $user->id;
+            if (!empty($business_details['start_date'])) {
+                $business_details['start_date'] = $this->businessUtil->uf_date($business_details['start_date']);
+            }
+
+            //upload logo
+            $logo_name = $this->businessUtil->uploadFile($request, 'business_logo', 'business_logos');
+            if (!empty($logo_name)) {
+                $business_details['logo'] = $logo_name;
+            }
+
+            $business = $this->businessUtil->createNewBusiness($business_details);
+
+            //Update user with business id
+            $user->business_id = $business->id;
+            $user->save();
+
+            //add default account and account types for business
+            // app('App\Http\Controllers\BusinessController')->addAccounts($business->id);
+
+
+            $this->businessUtil->newBusinessDefaultResources($business->id, $user->id);
+            $new_location = $this->businessUtil->addLocation($business->id, $business_location);
+
+            //create new permission with the new location
+            Permission::create(['name' => 'location.' . $new_location->id]);
+
+            DB::commit();
+
+            //Module function to be called after after business is created
+            if (config('app.env') != 'demo') {
+                $this->moduleUtil->getModuleData('after_business_created', ['business' => $business]);
+            }
+
+            $hospitals = Business::where('is_hospital', 1)->select('id', 'name')->get();
+
+            $output = [
+                'success' => 1,
+                'msg' => __('patient.hospital_add_success'),
+                'hospitals' => $hospitals
+            ];
+
+            return $output;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
+
+            $output = [
+                'success' => 0,
+                'msg' => __('messages.something_went_wrong')
+            ];
+
+            return $output;
+        }
+    }
+    /**
+     * Store a newly created pharmacy resource in storage.
+     * @param  Request $request
+     * @return Response
+     */
+    public function pharmacy_register(Request $request)
+    {
+        $startingPharmacyPrefix = System::getProperty('pharmacy_prefix');
+        try {
+            DB::beginTransaction();
+
+            //Create owner.
+            $owner_details = $request->only(['surname', 'first_name', 'last_name', 'username', 'email', 'password']);
+            $owner_details['language'] = env('APP_LOCALE');
+
+            $user = User::create_user($owner_details);
+
+            $business_details = $request->only(['name', 'start_date', 'currency_id', 'tax_label_1', 'tax_number_1', 'tax_label_2', 'tax_number_2', 'time_zone', 'accounting_method', 'fy_start_month']);
+
+            $business_location = $request->only(['name', 'country', 'state', 'city', 'zip_code', 'landmark', 'website', 'mobile', 'alternate_number']);
+
+            //adding hospital business name prefix
+            $business_details['name'] = $startingPharmacyPrefix . '' . $business_details['name'];
+            $business_details['is_pharmacy'] = 1;
+            //Create the business
+            $business_details['owner_id'] = $user->id;
+            if (!empty($business_details['start_date'])) {
+                $business_details['start_date'] = $this->businessUtil->uf_date($business_details['start_date']);
+            }
+
+            //upload logo
+            $logo_name = $this->businessUtil->uploadFile($request, 'business_logo', 'business_logos');
+            if (!empty($logo_name)) {
+                $business_details['logo'] = $logo_name;
+            }
+
+            $business = $this->businessUtil->createNewBusiness($business_details);
+
+            //Update user with business id
+            $user->business_id = $business->id;
+            $user->save();
+
+            //add default account and account types for business
+            // app('App\Http\Controllers\BusinessController')->addAccounts($business->id);
+
+
+            $this->businessUtil->newBusinessDefaultResources($business->id, $user->id);
+            $new_location = $this->businessUtil->addLocation($business->id, $business_location);
+
+            //create new permission with the new location
+            Permission::create(['name' => 'location.' . $new_location->id]);
+
+            DB::commit();
+
+            //Module function to be called after after business is created
+            if (config('app.env') != 'demo') {
+                $this->moduleUtil->getModuleData('after_business_created', ['business' => $business]);
+            }
+
+            $hospitals = Business::where('is_pharmacy', 1)->select('id', 'name')->get();
+
+            $output = [
+                'success' => 1,
+                'msg' => __('patient.pharmacy_add_success'),
+                'hospitals' => $hospitals
+            ];
+
+            return $output;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
+
+            $output = [
+                'success' => 0,
+                'msg' => __('messages.something_went_wrong')
+            ];
+
+            return $output;
+        }
+    }
+
+    /**
+     * Store a newly created laboratry resource in storage.
+     * @param  Request $request
+     * @return Response
+     */
+    public function laboratory_register(Request $request)
+    {
+        $startingLaboratoryPrefix = System::getProperty('laboratory_prefix');
+        try {
+            DB::beginTransaction();
+
+            //Create owner.
+            $owner_details = $request->only(['surname', 'first_name', 'last_name', 'username', 'email', 'password']);
+            $owner_details['language'] = env('APP_LOCALE');
+
+            $user = User::create_user($owner_details);
+
+            $business_details = $request->only(['name', 'start_date', 'currency_id', 'tax_label_1', 'tax_number_1', 'tax_label_2', 'tax_number_2', 'time_zone', 'accounting_method', 'fy_start_month']);
+
+            $business_location = $request->only(['name', 'country', 'state', 'city', 'zip_code', 'landmark', 'website', 'mobile', 'alternate_number']);
+
+            //adding hospital business name prefix
+            $business_details['name'] = $startingLaboratoryPrefix . '' . $business_details['name'];
+            $business_details['is_laboratory'] = 1;
+            //Create the business
+            $business_details['owner_id'] = $user->id;
+            if (!empty($business_details['start_date'])) {
+                $business_details['start_date'] = $this->businessUtil->uf_date($business_details['start_date']);
+            }
+
+            //upload logo
+            $logo_name = $this->businessUtil->uploadFile($request, 'business_logo', 'business_logos');
+            if (!empty($logo_name)) {
+                $business_details['logo'] = $logo_name;
+            }
+
+            $business = $this->businessUtil->createNewBusiness($business_details);
+
+            //Update user with business id
+            $user->business_id = $business->id;
+            $user->save();
+
+            //add default account and account types for business
+            // app('App\Http\Controllers\BusinessController')->addAccounts($business->id);
+
+
+            $this->businessUtil->newBusinessDefaultResources($business->id, $user->id);
+            $new_location = $this->businessUtil->addLocation($business->id, $business_location);
+
+            //create new permission with the new location
+            Permission::create(['name' => 'location.' . $new_location->id]);
+
+            DB::commit();
+
+            //Module function to be called after after business is created
+            if (config('app.env') != 'demo') {
+                $this->moduleUtil->getModuleData('after_business_created', ['business' => $business]);
+            }
+
+            $hospitals = Business::where('is_laboratory', 1)->select('id', 'name')->get();
+
+            $output = [
+                'success' => 1,
+                'msg' => __('patient.laboratory_add_success'),
+                'hospitals' => $hospitals
+            ];
+
+            return $output;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
+
+            $output = [
+                'success' => 0,
+                'msg' => __('messages.something_went_wrong')
+            ];
+
+            return $output;
+        }
+    }
+
+    /**
+     * Show the specified resource.
+     * @return Response
+     */
+    public function show($business_id)
+    {
+        if (!auth()->user()->can('superadmin')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $business = Business::with(['currency', 'locations', 'subscriptions', 'owner'])->find($business_id);
+
+        $created_id = $business->created_by;
+
+        $created_by = !empty($created_id) ? User::find($created_id) : null;
+
+        return view('superadmin::business.show')
+            ->with(compact('business', 'created_by'));
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     * @return Response
+     */
+    public function edit()
+    {
+        return view('superadmin::edit');
+    }
+
+    /**
+     * Update the specified resource in storage.
+     * @param  Request $request
+     * @return Response
+     */
+    public function update(Request $request)
+    {
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     * @return Response
+     */
+    public function destroy($id)
+    {
+        if (!auth()->user()->can('superadmin')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        try {
+            $notAllowed = $this->businessUtil->notAllowedInDemo();
+            if (!empty($notAllowed)) {
+                return $notAllowed;
+            }
+
+            //Check if logged in busines id is same as deleted business then not allowed.
+            $business_id = request()->session()->get('user.business_id');
+            if ($business_id == $id) {
+                $output = ['success' => 0, 'msg' => __('superadmin.lang.cannot_delete_current_business')];
+                return back()->with('status', $output);
+            }
+
+            DB::beginTransaction();
+
+            //Delete related products & transactions.
+            $products_id = Product::where('business_id', $id)->pluck('id')->toArray();
+            if (!empty($products_id)) {
+                VariationLocationDetails::whereIn('product_id', $products_id)->delete();
+            }
+            Transaction::where('business_id', $id)->delete();
+
+            Business::where('id', $id)
+                ->delete();
+
+            DB::commit();
+
+            $output = ['success' => 1, 'msg' => __('lang_v1.success')];
+            return redirect()
+                ->action('\Modules\Superadmin\Http\Controllers\BusinessController@index')
+                ->with('status', $output);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
+
+            $output = [
+                'success' => 0,
+                'msg' => __('messages.something_went_wrong')
+            ];
+
+            return back()->with('status', $output)->withInput();
+        }
+    }
+
+    /**
+     * Changes the activation status of a business.
+     * @return Response
+     */
+    public function toggleActive(Request $request, $business_id, $is_active)
+    {
+        if (!auth()->user()->can('superadmin')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $notAllowed = $this->businessUtil->notAllowedInDemo();
+        if (!empty($notAllowed)) {
+            return $notAllowed;
+        }
+
+        Business::where('id', $business_id)
+            ->update(['is_active' => $is_active]);
+
+        $output = [
+            'success' => 1,
+            'msg' => __('lang_v1.success')
+        ];
+        return back()->with('status', $output);
+    }
+
+    /**
+     * custom business package permissions
+     * @return Response
+     */
+    public function manage($id, Request $request)
+    {
+        $fonts = array(
+            "'Arial', sans-serif" => 'Arial',
+            "'Verdana', sans-serif" => 'Verdana',
+            "'Tahoma', sans-serif" => 'Tahoma',
+            "'Trebuchet MS', sans-serif" => 'Trebuchet MS',
+            "'Times New Roman', serif" => 'Times New Roman',
+            "'Georgia', serif" => 'Georgia',
+            "'Calibri', serif" => 'Calibri'
+        );
+
+        $business = Business::where('id', $id)->first();
+        $currencies = $this->businessUtil->allCurrencies();
+        $package_manage = Package::where('only_for_business', $id)->first();
+        
+        $main_business = Business::first();
+        
+        $account_nos = AccountNumber::leftjoin('default_account_types as type', 'account_numbers.account_type', 'type.id')
+                ->where('account_numbers.business_id',$id)
+                ->select([
+                    'account_numbers.*',
+                    'type.name as type',
+                ])->get();
+        
+        $account_types = DefaultAccountType::where('business_id', $main_business->id)
+            ->whereNull('parent_account_type_id')
+            ->with(['sub_types'])
+            ->get();
+        
+        $subscription = Subscription::active_subscription($id);
+        $previous_package_data['product_count'] = 0;
+        $previous_package_data['location_count'] = 0;
+        $previous_package_data['vehicle_count'] = 0;
+        $previous_package_data['allowed_tanks'] = 0;
+        
+        
+        if (!empty($subscription) && empty($package_manage)) {
+            // if conpmany package is not there then get the already subscribed package
+            $already_running_pacakge = Package::where('id', $subscription->package_id)->first();
+            
+            $previous_package_data['product_count'] = !empty($subscription->package_details['product_count']) ? json_decode(json_encode($subscription->package_details['product_count']),true) : 0;
+            $previous_package_data['location_count'] = !empty($subscription->package_details['location_count']) ? json_decode(json_encode($subscription->package_details['location_count']),true) : 0;
+            $previous_package_data['vehicle_count'] = !empty($subscription->package_details['vehicle_count']) ? json_decode(json_encode($subscription->package_details['vehicle_count']),true) : 0;
+            $previous_package_data['allowed_tanks'] = !empty($subscription->package_details['allowed_tanks']) ? json_decode(json_encode($subscription->package_details['allowed_tanks']),true) : 0;
+        }
+
+        // $module_enable_price = !empty($package_manage->module_enable_price) ? json_decode($package_manage->module_enable_price) : []; //input values
+        $module_activation_data = array();
+        $customer_credit_notification_type = array();
+        if (!empty($subscription)){
+            $manage_module_enable = !empty($subscription->package_details) ? json_decode(json_encode($subscription->package_details),true) : array();
+            $module_activation_data = !empty($subscription->module_activation_details) ? json_decode($subscription->module_activation_details,true) : array();
+            $customer_credit_notification_type = !empty($subscription->customer_credit_notification_type) ? json_decode($subscription->customer_credit_notification_type,true) : array();
+        }else{
+            $manage_module_enable = !empty($package_manage->manage_module_enable) ? json_decode($package_manage->manage_module_enable) : []; //checkboxes
+        }
+        
+        // return $manage_module_enable;
+        $other_permissions = !empty($package_manage->other_permissions) ? json_decode($package_manage->other_permissions) : []; //checkboxes
+        $current_values = !empty($package_manage->current_values) ? ($package_manage->current_values) : [];
+        $sms_settings = empty($business->sms_settings) ? $this->businessUtil->defaultSmsSettings() : $business->sms_settings;
+        $business_locations = BusinessLocation::where('business_id', $id)->get();
+
+        $module_permission_locations = ModulePermissionLocation::getModulePermissionList();
+
+        $business_details = Business::where('id', $id)->first();
+        $sale_import_date = null;
+        $purchase_import_date = null;
+        if (!empty($business_details)) {
+            $sale_import_date = !empty($business_details->sale_import_date) ? $this->moduleUtil->format_date($business_details->sale_import_date) : null;
+        }
+        if (!empty($business_details)) {
+            $purchase_import_date = !empty($business_details->purchase_import_date) ? $this->moduleUtil->format_date($business_details->purchase_import_date) : null;
+        }
+
+        $module_permission_locations_value = [];
+        foreach ($module_permission_locations as $module) {
+            $module_permission_locations_value[$module] = ModulePermissionLocation::getModulePermissionLocations($id, $module);
+        }
+
+        $payment_types = $this->moduleUtil->payment_types();
+        $accounts = Account::where('business_id', $id)->get();
+
+        $only_assets_accounts = Account::leftjoin('account_types', 'accounts.account_type_id', 'account_types.id')->where('accounts.business_id', $id)->where(function ($query) {
+            $query->where('account_types.name', 'Current Assets');
+        })->pluck('accounts.name', 'accounts.id');
+        $business_locations = BusinessLocation::where('business_id', $id)->get();
+        
+        
+        // update default payment methods
+        foreach($business_locations as $bl){
+            $this->updatePaymentMthds($bl);
+        }
+        
+
+        $account_groups = AccountGroup::where('business_id',$id)->select('name','id')->pluck('name','id');
+        
+        $customer_interest_deduct_option = $business->customer_interest_deduct_option;
+        $other_permissions_array = array(
+            'purchase',
+            'stock_transfer',
+            'service_staff',
+            'enable_subscription',
+            'add_sale',
+            'stock_adjustment',
+            'tables',
+            'type_of_service',
+            'pos_sale',
+            'expenses',
+            'modifiers',
+            'kitchen',
+            'customer_interest_deduct_option',
+        );
+        
+        $general_notifications = NotificationTemplate::generalNotifications();
+        $customer_notifications = NotificationTemplate::customerNotifications();
+        $supplier_notifications = NotificationTemplate::supplierNotifications();
+        
+        return view('superadmin::business.manage')->with(compact('fonts','account_groups','subscription','customer_credit_notification_type',
+            'account_nos','general_notifications','customer_notifications','supplier_notifications',
+            'account_types','only_assets_accounts', 'business_locations', 'payment_types', 'previous_package_data', 'business_details', 'accounts', 'business_locations', 'sale_import_date', 'purchase_import_date', 'module_permission_locations', 'module_permission_locations_value', 'other_permissions', 'other_permissions_array', 'id', 'business', 'currencies', 'package_manage', /*'module_enable_price',*/ 'current_values', 'manage_module_enable','module_activation_data', 'sms_settings','customer_interest_deduct_option'));
+    }
+    
+    private function updatePaymentMthds($location){
+        
+        // insert own cards if not available
+        if(empty($this->accountGrpID('Own Cards',$location->business_id))){
+            
+            $acc_type = AccountType::where('business_id', $location->business_id)->where('name','Equity')->first()->id ?? null;
+            $defacc_type = DefaultAccountGroup::where('name','Own Cards')->first()->id ?? null;
+            
+            AccountGroup::create([
+                    'business_id' => $location->business_id,
+                    'name' => 'Own Cards',
+                    'account_type_id' => $acc_type,
+                    'reg_cheque' => 'Y',
+                    'default_account_group_id' => $defacc_type
+
+            ]);
+        }
+        
+        
+        
+        $pmts = !empty($location->default_payment_accounts) ? json_decode($location->default_payment_accounts,true) : [];
+        $pmts['cash'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "1",
+            "is_sale_enabled" => "1",
+            "is_expense_enabled" => "1",
+            "is_purchase_return_enabled" => "1",
+            "is_sale_return_enabled" => "1",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID('Cash Account',$location->business_id)
+        );
+        
+        $pmts['credit_sale'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "0",
+            "is_sale_enabled" => "1",
+            "is_expense_enabled" => "0",
+            "is_purchase_return_enabled" => "0",
+            "is_sale_return_enabled" => "1",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID('Credit Sales',$location->business_id)
+        );
+        
+        $pmts['own_cards'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "1",
+            "is_sale_enabled" => "0",
+            "is_expense_enabled" => "1",
+            "is_purchase_return_enabled" => "1",
+            "is_sale_return_enabled" => "0",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID('Own Cards',$location->business_id)
+        );
+        
+        $pmts['card'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "0",
+            "is_sale_enabled" => "1",
+            "is_expense_enabled" => "0",
+            "is_purchase_return_enabled" => "0",
+            "is_sale_return_enabled" => "1",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID('Card',$location->business_id)
+        );
+        
+        $pmts['cheque'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "0",
+            "is_sale_enabled" => "1",
+            "is_expense_enabled" => "0",
+            "is_purchase_return_enabled" => "0",
+            "is_sale_return_enabled" => "1",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID("Cheques in Hand (Customer's)",$location->business_id)
+        );
+        
+        $pmts['direct_bank_deposit'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "1",
+            "is_sale_enabled" => "1",
+            "is_expense_enabled" => "1",
+            "is_purchase_return_enabled" => "1",
+            "is_sale_return_enabled" => "1",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID('Bank Account',$location->business_id)
+        );
+        
+        $pmts['bank_transfer'] = array("is_enabled" => "1",
+            "is_purchase_enabled" => "1",
+            "is_sale_enabled" => "1",
+            "is_expense_enabled" => "1",
+            "is_purchase_return_enabled" => "1",
+            "is_sale_return_enabled" => "1",
+            "is_custom" => "0",
+            "account" => $this->accountGrpID('Bank Account',$location->business_id)
+        );
+        
+        $location->default_payment_accounts = json_encode($pmts);
+        $location->save();
+    }
+    
+    private function accountGrpID($name,$business_id){
+        $acc = AccountGroup::where('business_id',$business_id)->where('name',$name)->first();
+        
+        return !empty($acc) ? $acc->id : null;
+    }
+    
+
+    /**
+     * save manage permission
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+     
+    
+    function returnDays($type){
+        switch($type){
+            case "Years":
+                return 365;
+            break;
+            case "Days":
+                return 1;
+            break;
+            case "Months":
+                return 30;
+            break;
+        }
+        
+        return 0;
+    }
+    
+    public function saveManage($id, Request $request)
+    {
+        
+        
+        try {
+            
+            foreach($request->default_payment_accounts as $key => $value){
+                
+                
+                
+                if (in_array(null, $value['name'], true)) {
+                    $output = [
+                        'success' => 0,
+                        'msg' => __('messages.missing_account_names')
+                    ];
+                    return back()->with('status', $output)->withInput();
+                }
+                
+                if (in_array(null, $value['is_enabled'], true)) {
+                    $output = [
+                        'success' => 0,
+                        'msg' => __('messages.missing_active_status')
+                    ];
+                    return back()->with('status', $output)->withInput();
+                }
+                
+                foreach ($value['account'] as $index => $account) {
+                    
+                    if (empty($account) && isset($value['is_enabled'][$index]) && $value['is_enabled'][$index] == 1) {
+                        $output = [
+                            'success' => 0,
+                            'msg' => __('messages.missing_account_groups')
+                        ];
+                        return back()->with('status', $output)->withInput();
+                    }
+                }
+                
+            }
+            
+                     
+            
+            $business = Business::findOrFail($id);
+            $subscription = Subscription::active_subscription($id);
+            $already_running_pacakge = null;
+            
+            
+            if (!empty($subscription)) {
+                $already_running_pacakge = DB::table('packages')
+                ->select('*')
+                ->where('id', $subscription->package_id)
+                ->first();
+            }
+            
+            $addto = Package::getPackagePeriodInDays($already_running_pacakge);
+            
+            $package_manage = Package::where('only_for_business', $id)->first();
+            if(!empty($package_manage)){
+                $package_manage->price = $request->annual_fee_package;
+                $package_manage->currency_id = $request->currency_id;
+                $package_manage->save();
+            }
+            
+            
+            
+            // dd($addto);
+            
+            $module_activation_data = array();
+            
+            // prices
+            $module_activation_data['mf_price'] = $request->mf_price;
+            $module_activation_data['ac_price'] = $request->ac_price;
+            
+            $module_activation_data['deposits_price'] = $request->deposits_price;
+            
+            $module_activation_data['crm_module_price'] = $request->crm_module_price;
+            $module_activation_data['ezyinvoice_module_price'] = $request->ezyinvoice_module_price;
+            $module_activation_data['airline_module_price'] = $request->airline_module_price;
+            $module_activation_data['shipping_module_price'] = $request->shipping_module_price;
+            $module_activation_data['asset_module_price'] = $request->asset_module_price;
+            $module_activation_data['hms_module_price'] = $request->hms_module_price;
+            
+            $module_activation_data['access_module_price'] = $request->access_module_price;
+            $module_activation_data['hr_price'] = $request->hr_price;
+            $module_activation_data['vreg_price'] = $request->vreg_price;
+            $module_activation_data['petro_price'] = $request->petro_price;
+            $module_activation_data['repair_price'] = $request->repair_price;
+            $module_activation_data['fleet_price'] = $request->fleet_price;
+            $module_activation_data['mpcs_price'] = $request->mpcs_price;
+            $module_activation_data['backup_price'] = $request->backup_price;
+            $module_activation_data['property_price'] = $request->property_price;
+            $module_activation_data['auto_price'] = $request->auto_price;
+            $module_activation_data['contact_price'] = $request->contact_price;
+            $module_activation_data['ran_price'] = $request->ran_price;
+            $module_activation_data['report_price'] = $request->report_price;
+            $module_activation_data['settings_price'] = $request->settings_price;
+            $module_activation_data['um_price'] = $request->um_price;
+            $module_activation_data['banking_price'] = $request->banking_price;
+            $module_activation_data['sale_price'] = $request->sale_price;
+            $module_activation_data['leads_price'] = $request->leads_price;
+            
+            $module_activation_data['hospital_price'] = $request->hospital_price;
+            $module_activation_data['restaurant_price'] = $request->restaurant_price;
+            $module_activation_data['duplicate_invoice_price'] = $request->duplicate_invoice_price;
+            $module_activation_data['tasks_price'] = $request->tasks_price;
+            $module_activation_data['cheque_price'] = $request->cheque_price;
+            $module_activation_data['list_easy_price'] = $request->list_easy_price;
+            $module_activation_data['pump_price'] = $request->pump_price;
+            $module_activation_data['stock_taking_price'] = $request->stock_taking_price;
+            $module_activation_data['installment_module_price'] = $request->installment_module_price;
+            
+            // doc 6104
+             $module_activation_data['enable_sms_price'] = $request->enable_sms_price;
+             $module_activation_data['list_sms_price'] = $request->list_sms_price;
+             $module_activation_data['notification_template_price'] = $request->notification_template_price;
+             
+            $module_activation_data['products_price'] = $request->products_price;
+            $module_activation_data['purchase_price'] = $request->purchase_price;
+            $module_activation_data['stock_transfer_price'] = $request->stock_transfer_price;
+            $module_activation_data['daily_review_price'] = $request->daily_review_price;
+            $module_activation_data['service_staff_price'] = $request->service_staff_price;
+            $module_activation_data['enable_subscription_price'] = $request->enable_subscription_price;
+            
+            $module_activation_data['post_dated_price'] = $request->post_dated_price;
+            $module_activation_data['vat_price'] = $request->vat_price;
+            $module_activation_data['bakery_price'] = $request->bakery_price;
+            $module_activation_data['subscriptions_price'] = $request->subscriptions_price;
+            
+            $module_activation_data['smsmodule_price'] = $request->smsmodule_price;
+            
+            $module_activation_data['distribution_module'] = $request->distribution_module;
+            $module_activation_data['spreadsheet'] = $request->spreadsheet;
+            $module_activation_data['essentials_module'] = $request->essentials_module;
+            
+            $module_activation_data['price_changes_price'] = $request->price_changes_price;
+            $module_activation_data['day_end_price'] = $request->day_end_price;
+            $module_activation_data['customer_interest_price'] = $request->customer_interest_price;
+            $module_activation_data['issue_customer_bill_price'] = $request->issue_customer_bill_price;
+            $module_activation_data['issue_customer_bill_vat_price'] = $request->issue_customer_bill_vat_price;
+            
+            $module_activation_data['ezy_price'] = $request->ezy_price;
+            
+            // Lengths:
+            $module_activation_data['mf_length'] = $request->mf_length;
+            $module_activation_data['ac_length'] = $request->ac_length;
+            
+            $module_activation_data['deposits_length'] = $request->deposits_length;
+            
+            $module_activation_data['crm_module_length'] = $request->crm_module_length;
+            $module_activation_data['ezyinvoice_module_length'] = $request->ezyinvoice_module_length;
+            $module_activation_data['airline_module_length'] = $request->airline_module_length;
+            $module_activation_data['shipping_module_length'] = $request->shipping_module_length;
+            $module_activation_data['asset_module_length'] = $request->asset_module_length;
+            $module_activation_data['hms_module_length'] = $request->hms_module_length;
+            
+            $module_activation_data['access_module_length'] = $request->access_module_length;
+            $module_activation_data['hr_length'] = $request->hr_length;
+            $module_activation_data['vreg_length'] = $request->vreg_length;
+            $module_activation_data['petro_length'] = $request->petro_length;
+            $module_activation_data['repair_length'] = $request->repair_length;
+            $module_activation_data['fleet_length'] = $request->fleet_length;
+            $module_activation_data['mpcs_length'] = $request->mpcs_length;
+            $module_activation_data['backup_length'] = $request->backup_length;
+            $module_activation_data['property_length'] = $request->property_length;
+            $module_activation_data['auto_length'] = $request->auto_length;
+            $module_activation_data['contact_length'] = $request->contact_length;
+            $module_activation_data['ran_length'] = $request->ran_length;
+            $module_activation_data['report_length'] = $request->report_length;
+            $module_activation_data['settings_length'] = $request->settings_length;
+            $module_activation_data['um_length'] = $request->um_length;
+            $module_activation_data['banking_length'] = $request->banking_length;
+            $module_activation_data['sale_length'] = $request->sale_length;
+            $module_activation_data['leads_length'] = $request->leads_length;
+            
+            $module_activation_data['hospital_length'] = $request->hospital_length;
+            $module_activation_data['restaurant_length'] = $request->restaurant_length;
+            $module_activation_data['duplicate_invoice_length'] = $request->duplicate_invoice_length;
+            $module_activation_data['tasks_length'] = $request->tasks_length;
+            $module_activation_data['cheque_length'] = $request->cheque_length;
+            $module_activation_data['list_easy_length'] = $request->list_easy_length;
+            $module_activation_data['pump_length'] = $request->pump_length;
+            $module_activation_data['stock_taking_length'] = $request->stock_taking_length;
+            $module_activation_data['installment_module_length'] = $request->installment_module_length;
+            
+            // doc 6104
+            $module_activation_data['enable_sms_length'] = $request->enable_sms_length;
+            $module_activation_data['list_sms_length'] = $request->list_sms_length;
+            $module_activation_data['notification_template_length'] = $request->notification_template_length;
+            
+            $module_activation_data['products_length'] = $request->products_length;
+            $module_activation_data['purchase_length'] = $request->purchase_length;
+            $module_activation_data['stock_transfer_length'] = $request->stock_transfer_length;
+            $module_activation_data['daily_review_length'] = $request->daily_review_length;
+            $module_activation_data['service_staff_length'] = $request->service_staff_length;
+            $module_activation_data['enable_subscription_length'] = $request->enable_subscription_length;
+            
+            $module_activation_data['distribution_module_length'] = $request->distribution_module_length;
+            $module_activation_data['spreadsheet_length'] = $request->spreadsheet_length;
+            $module_activation_data['essentials_length'] = $request->essentials_length;
+            
+            $module_activation_data['price_changes_length'] = $request->price_changes_length;
+            $module_activation_data['day_end_length'] = $request->day_end_length;
+            $module_activation_data['customer_interest_length'] = $request->customer_interest_length;
+            $module_activation_data['issue_customer_bill_length'] = $request->issue_customer_bill_length;
+            $module_activation_data['issue_customer_bill_vat_length'] = $request->issue_customer_bill_vat_length;
+            
+            $module_activation_data['post_dated_length'] = $request->post_dated_length;
+            $module_activation_data['vat_length'] = $request->vat_length;
+            $module_activation_data['bakery_length'] = $request->bakery_length;
+            $module_activation_data['subscriptions_length'] = $request->subscriptions_length;
+            
+            $module_activation_data['smsmodule_length'] = $request->smsmodule_length;
+            
+            $module_activation_data['ezy_length'] = $request->ezy_length;
+            
+            
+            // intervals
+            $module_activation_data['mf_interval'] = $request->mf_interval;
+            $module_activation_data['ac_interval'] = $request->ac_interval;
+            
+            $module_activation_data['deposits_interval'] = $request->deposits_interval;
+            
+            $module_activation_data['ezyinvoice_module_interval'] = $request->ezyinvoice_module_interval;
+            $module_activation_data['crm_module_interval'] = $request->crm_module_interval;
+            $module_activation_data['airline_module_interval'] = $request->airline_module_interval;
+            $module_activation_data['shipping_module_interval'] = $request->shipping_module_interval;
+            $module_activation_data['asset_module_interval'] = $request->asset_module_interval;
+            $module_activation_data['hms_module_interval'] = $request->hms_module_interval;
+            
+            $module_activation_data['access_module_interval'] = $request->access_module_interval;
+            $module_activation_data['hr_interval'] = $request->hr_interval;
+            $module_activation_data['vreg_interval'] = $request->vreg_interval;
+            $module_activation_data['petro_interval'] = $request->petro_interval;
+            $module_activation_data['repair_interval'] = $request->repair_interval;
+            $module_activation_data['fleet_interval'] = $request->fleet_interval;
+            $module_activation_data['mpcs_interval'] = $request->mpcs_interval;
+            $module_activation_data['backup_interval'] = $request->backup_interval;
+            $module_activation_data['property_interval'] = $request->property_interval;
+            $module_activation_data['auto_interval'] = $request->auto_interval;
+            $module_activation_data['contact_interval'] = $request->contact_interval;
+            $module_activation_data['ran_interval'] = $request->ran_interval;
+            $module_activation_data['report_interval'] = $request->report_interval;
+            $module_activation_data['settings_interval'] = $request->settings_interval;
+            $module_activation_data['um_interval'] = $request->um_interval;
+            $module_activation_data['banking_interval'] = $request->banking_interval;
+            $module_activation_data['sale_interval'] = $request->sale_interval;
+            $module_activation_data['leads_interval'] = $request->leads_interval; //new modules addition below
+            $module_activation_data['hospital_interval'] = $request->hospital_interval;
+            $module_activation_data['restaurant_interval'] = $request->restaurant_interval;
+            $module_activation_data['duplicate_invoice_interval'] = $request->duplicate_invoice_interval;
+            $module_activation_data['tasks_interval'] = $request->tasks_interval;
+            $module_activation_data['cheque_interval'] = $request->cheque_interval;
+            $module_activation_data['list_easy_interval'] = $request->list_easy_interval;
+            $module_activation_data['pump_interval'] = $request->pump_interval;
+            $module_activation_data['stock_taking_interval'] = $request->stock_taking_interval;
+            
+            $module_activation_data['installment_module_interval'] = $request->installment_module_interval;
+            
+            
+            // doc 6104
+            $module_activation_data['list_sms_interval'] = $request->list_sms_interval;
+            $module_activation_data['enable_sms_interval'] = $request->enable_sms_interval;
+            $module_activation_data['notification_template_interval'] = $request->notification_template_interval;
+            
+            
+            // ///////////////////////////////////////////////////////////////////////////////
+            $module_activation_data['products_interval'] = $request->products_interval;
+            $module_activation_data['purchase_interval'] = $request->purchase_interval;
+            $module_activation_data['stock_transfer_interval'] = $request->stock_transfer_interval;
+            $module_activation_data['daily_review_interval'] = $request->daily_review_interval;
+            $module_activation_data['service_staff_interval'] = $request->service_staff_interval;
+            $module_activation_data['enable_subscription_interval'] = $request->enable_subscription_interval;
+            
+            $module_activation_data['distribution_module_interval'] = $request->distribution_module_interval;
+            $module_activation_data['spreadsheet_interval'] = $request->spreadsheet_interval;
+            $module_activation_data['essentials_interval'] = $request->essentials_interval;
+            
+            $module_activation_data['price_changes_interval'] = $request->price_changes_interval;
+            $module_activation_data['day_end_interval'] = $request->day_end_interval;
+            $module_activation_data['customer_interest_interval'] = $request->customer_interest_interval;
+            $module_activation_data['issue_customer_bill_interval'] = $request->issue_customer_bill_interval;
+            $module_activation_data['issue_customer_bill_vat_interval'] = $request->issue_customer_bill_vat_interval;
+            
+            $module_activation_data['post_dated_interval'] = $request->post_dated_interval;
+            $module_activation_data['vat_interval'] = $request->vat_interval;
+            $module_activation_data['bakery_interval'] = $request->bakery_interval;
+            $module_activation_data['subscriptions_interval'] = $request->subscriptions_interval;
+            
+            $module_activation_data['smsmodule_interval'] = $request->smsmodule_interval;
+            
+            $module_activation_data['ezy_interval'] = $request->ezy_interval;
+            
+            // activation dates
+            $module_activation_data['mf_activated_on'] = $request->mf_activated_on;
+            $module_activation_data['ac_activated_on'] = $request->ac_activated_on;
+            
+            $module_activation_data['deposits_activated_on'] = $request->deposits_activated_on;
+            
+            $module_activation_data['crm_module_activated_on'] = $request->crm_module_activated_on;
+            $module_activation_data['ezyinvoice_module_activated_on'] = $request->ezyinvoice_module_activated_on;
+            $module_activation_data['shipping_module_activated_on'] = $request->shipping_module_activated_on;
+            $module_activation_data['airline_module_activated_on'] = $request->airline_module_activated_on;
+            $module_activation_data['asset_module_activated_on'] = $request->asset_module_activated_on;
+            $module_activation_data['hms_module_activated_on'] = $request->hms_module_activated_on;
+            
+            $module_activation_data['access_module_activated_on'] = $request->access_module_activated_on;
+            $module_activation_data['hr_activated_on'] = $request->hr_activated_on;
+            $module_activation_data['vreg_activated_on'] = $request->vreg_activated_on;
+            $module_activation_data['petro_activated_on'] = $request->petro_activated_on;
+            $module_activation_data['repair_activated_on'] = $request->repair_activated_on;
+            $module_activation_data['fleet_activated_on'] = $request->fleet_activated_on;
+            $module_activation_data['mpcs_activated_on'] = $request->mpcs_activated_on;
+            $module_activation_data['backup_activated_on'] = $request->backup_activated_on;
+            $module_activation_data['property_activated_on'] = $request->property_activated_on;
+            $module_activation_data['auto_activated_on'] = $request->auto_activated_on;
+            $module_activation_data['contact_activated_on'] = $request->contact_activated_on;
+            $module_activation_data['ran_activated_on'] = $request->ran_activated_on;
+            $module_activation_data['report_activated_on'] = $request->report_activated_on;
+            $module_activation_data['settings_activated_on'] = $request->settings_activated_on;
+            $module_activation_data['um_activated_on'] = $request->um_activated_on;
+            $module_activation_data['banking_activated_on'] = $request->banking_activated_on;
+            $module_activation_data['sale_activated_on'] = $request->sale_activated_on;
+            $module_activation_data['leads_activated_on'] = $request->leads_activated_on; // added modules
+            $module_activation_data['hospital_activated_on'] = $request->hospital_activated_on;
+            $module_activation_data['restaurant_activated_on'] = $request->restaurant_activated_on;
+            $module_activation_data['duplicate_invoice_activated_on'] = $request->duplicate_invoice_activated_on;
+            $module_activation_data['tasks_activated_on'] = $request->tasks_activated_on;
+            $module_activation_data['cheque_activated_on'] = $request->cheque_activated_on;
+            $module_activation_data['list_easy_activated_on'] = $request->list_easy_activated_on;
+            $module_activation_data['pump_activated_on'] = $request->pump_activated_on;
+            $module_activation_data['stock_taking_activated_on'] = $request->stock_taking_activated_on;
+            
+            $module_activation_data['installment_module_activated_on'] = $request->installment_module_activated_on;
+            
+            // doc 6104
+            $module_activation_data['enable_sms_activated_on'] = $request->enable_sms_activated_on;
+            $module_activation_data['list_sms_activated_on'] = $request->list_sms_activated_on;
+            $module_activation_data['notification_template_activated_on'] = $request->notification_template_activated_on;
+            
+            // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            $module_activation_data['products_activated_on'] = $request->products_activated_on;
+            $module_activation_data['purchase_activated_on'] = $request->purchase_activated_on;
+            $module_activation_data['stock_transfer_activated_on'] = $request->stock_transfer_activated_on;
+            $module_activation_data['daily_review_activated_on'] = $request->daily_review_activated_on;
+            $module_activation_data['service_staff_activated_on'] = $request->service_staff_activated_on;
+            $module_activation_data['enable_subscription_activated_on'] = $request->enable_subscription_activated_on;
+            
+            $module_activation_data['distribution_module_activated_on'] = $request->distribution_module_activated_on;
+            $module_activation_data['spreadsheet_activated_on'] = $request->spreadsheet_activated_on;
+            $module_activation_data['essentials_activated_on'] = $request->essentials_activated_on;
+            
+            $module_activation_data['price_changes_activated_on'] = $request->price_changes_activated_on;
+            $module_activation_data['day_end_activated_on'] = $request->day_end_activated_on;
+            $module_activation_data['customer_interest_activated_on'] = $request->customer_interest_activated_on;
+            $module_activation_data['issue_customer_bill_activated_on'] = $request->issue_customer_bill_activated_on;
+            $module_activation_data['issue_customer_bill_vat_activated_on'] = $request->issue_customer_bill_vat_activated_on;
+            
+            $module_activation_data['post_dated_activated_on'] = $request->post_dated_activated_on;
+            $module_activation_data['vat_activated_on'] = $request->vat_activated_on;
+            $module_activation_data['bakery_activated_on'] = $request->bakery_activated_on;
+            $module_activation_data['subscriptions_activated_on'] = $request->subscriptions_activated_on;
+            
+            $module_activation_data['smsmodule_activated_on'] = $request->smsmodule_activated_on;
+            
+            $module_activation_data['ezy_activated_on'] = $request->ezy_activated_on;
+            
+            
+            // days added
+            $addto_data['mf_addto'] = (!empty($module_activation_data['mf_length']) && !empty($module_activation_data['mf_interval'])) ? ($this->returnDays($module_activation_data['mf_interval']) * $module_activation_data['mf_length']) : $addto;
+            $addto_data['ac_addto'] = (!empty($module_activation_data['ac_length']) && !empty($module_activation_data['ac_interval'])) ? ($this->returnDays($module_activation_data['ac_interval']) * $module_activation_data['ac_length']) : $addto;
+            
+            $addto_data['deposits_addto'] = (!empty($module_activation_data['deposits_length']) && !empty($module_activation_data['deposits_interval'])) ? ($this->returnDays($module_activation_data['deposits_interval']) * $module_activation_data['deposits_length']) : $addto;
+            
+            $addto_data['crm_addto'] = (!empty($module_activation_data['crm_module_length']) && !empty($module_activation_data['crm_module_interval'])) ? ($this->returnDays($module_activation_data['crm_module_interval']) * $module_activation_data['crm_module_length']) : $addto;
+            $addto_data['ezyinvoice_addto'] = (!empty($module_activation_data['ezyinvoice_module_length']) && !empty($module_activation_data['ezyinvoice_module_interval'])) ? ($this->returnDays($module_activation_data['ezyinvoice_module_interval']) * $module_activation_data['ezyinvoice_module_length']) : $addto;
+            $addto_data['shipping_addto'] = (!empty($module_activation_data['shipping_module_length']) && !empty($module_activation_data['shipping_module_interval'])) ? ($this->returnDays($module_activation_data['shipping_module_interval']) * $module_activation_data['shipping_module_length']) : $addto;
+            $addto_data['airline_addto'] = (!empty($module_activation_data['airline_module_length']) && !empty($module_activation_data['airline_module_interval'])) ? ($this->returnDays($module_activation_data['airline_module_interval']) * $module_activation_data['airline_module_length']) : $addto;
+            $addto_data['asset_addto'] = (!empty($module_activation_data['asset_module_length']) && !empty($module_activation_data['asset_module_interval'])) ? ($this->returnDays($module_activation_data['asset_module_interval']) * $module_activation_data['asset_module_length']) : $addto;
+            $addto_data['hms_addto'] = (!empty($module_activation_data['hms_module_length']) && !empty($module_activation_data['hms_module_interval'])) ? ($this->returnDays($module_activation_data['hms_module_interval']) * $module_activation_data['hms_module_length']) : $addto;
+            
+            $addto_data['access_module_addto'] = (!empty($module_activation_data['access_module_length']) && !empty($module_activation_data['access_module_interval'])) ? ($this->returnDays($module_activation_data['access_module_interval']) * $module_activation_data['access_module_length']) : $addto;
+            $addto_data['hr_addto'] = (!empty($module_activation_data['hr_length']) && !empty($module_activation_data['hr_interval'])) ? ($this->returnDays($module_activation_data['hr_interval']) * $module_activation_data['hr_length']) : $addto;
+            $addto_data['vreg_addto'] = (!empty($module_activation_data['vreg_length']) && !empty($module_activation_data['vreg_interval'])) ? ($this->returnDays($module_activation_data['vreg_interval']) * $module_activation_data['vreg_length']) : $addto;
+            $addto_data['petro_addto'] = (!empty($module_activation_data['petro_length']) && !empty($module_activation_data['petro_interval'])) ? ($this->returnDays($module_activation_data['petro_interval']) * $module_activation_data['petro_length']) : $addto;
+            $addto_data['repair_addto'] = (!empty($module_activation_data['repair_length']) && !empty($module_activation_data['repair_interval'])) ? ($this->returnDays($module_activation_data['repair_interval']) * $module_activation_data['repair_length']) : $addto;
+            $addto_data['fleet_addto'] = (!empty($module_activation_data['fleet_length']) && !empty($module_activation_data['fleet_interval'])) ? ($this->returnDays($module_activation_data['fleet_interval']) * $module_activation_data['fleet_length']) : $addto;
+            $addto_data['mpcs_addto'] = (!empty($module_activation_data['mpcs_length']) && !empty($module_activation_data['mpcs_interval'])) ? ($this->returnDays($module_activation_data['mpcs_interval']) * $module_activation_data['mpcs_length']) : $addto;
+            $addto_data['backup_addto'] = (!empty($module_activation_data['backup_length']) && !empty($module_activation_data['backup_interval'])) ? ($this->returnDays($module_activation_data['backup_interval']) * $module_activation_data['backup_length']) : $addto;
+            $addto_data['property_addto'] = (!empty($module_activation_data['property_length']) && !empty($module_activation_data['property_interval'])) ? ($this->returnDays($module_activation_data['property_interval']) * $module_activation_data['property_length']) : $addto;
+            $addto_data['auto_addto'] = (!empty($module_activation_data['auto_length']) && !empty($module_activation_data['auto_interval'])) ? ($this->returnDays($module_activation_data['auto_interval']) * $module_activation_data['auto_length']) : $addto;
+            $addto_data['contact_addto'] = (!empty($module_activation_data['contact_length']) && !empty($module_activation_data['contact_interval'])) ? ($this->returnDays($module_activation_data['contact_interval']) * $module_activation_data['contact_length']) : $addto;
+            $addto_data['ran_addto'] = (!empty($module_activation_data['ran_length']) && !empty($module_activation_data['ran_interval'])) ? ($this->returnDays($module_activation_data['ran_interval']) * $module_activation_data['ran_length']) : $addto;
+            $addto_data['report_addto'] = (!empty($module_activation_data['report_length']) && !empty($module_activation_data['report_interval'])) ? ($this->returnDays($module_activation_data['report_interval']) * $module_activation_data['report_length']) : $addto;
+            $addto_data['settings_addto'] = (!empty($module_activation_data['settings_length']) && !empty($module_activation_data['settings_interval'])) ? ($this->returnDays($module_activation_data['settings_interval']) * $module_activation_data['settings_length']) : $addto;
+            $addto_data['um_addto'] = (!empty($module_activation_data['um_length']) && !empty($module_activation_data['um_interval'])) ? ($this->returnDays($module_activation_data['um_interval']) * $module_activation_data['um_length']) : $addto;
+            $addto_data['banking_addto'] = (!empty($module_activation_data['banking_length']) && !empty($module_activation_data['banking_interval'])) ? ($this->returnDays($module_activation_data['banking_interval']) * $module_activation_data['banking_length']) : $addto;
+            $addto_data['sale_addto'] = (!empty($module_activation_data['sale_length']) && !empty($module_activation_data['sale_interval'])) ? ($this->returnDays($module_activation_data['sale_interval']) * $module_activation_data['sale_length']) : $addto;
+            $addto_data['leads_addto'] = (!empty($module_activation_data['leads_length']) && !empty($module_activation_data['leads_interval'])) ? ($this->returnDays($module_activation_data['leads_interval']) * $module_activation_data['leads_length']) : $addto; // new modules addition
+            $addto_data['hospital_addto'] = (!empty($module_activation_data['hospital_length']) && !empty($module_activation_data['hospital_interval'])) ? ($this->returnDays($module_activation_data['hospital_interval']) * $module_activation_data['hospital_length']) : $addto;
+            
+            $addto_data['restaurant_addto'] = (!empty($module_activation_data['restaurant_length']) && !empty($module_activation_data['restaurant_interval'])) ? ($this->returnDays($module_activation_data['restaurant_interval']) * $module_activation_data['restaurant_length']) : $addto;
+            
+            $addto_data['duplicate_invoice_addto'] = (!empty($module_activation_data['duplicate_invoice_length']) && !empty($module_activation_data['duplicate_invoice_interval'])) ? ($this->returnDays($module_activation_data['duplicate_invoice_interval']) * $module_activation_data['duplicate_invoice_length']) : $addto;
+            
+            $addto_data['tasks_addto'] = (!empty($module_activation_data['tasks_length']) && !empty($module_activation_data['tasks_interval'])) ? ($this->returnDays($module_activation_data['tasks_interval']) * $module_activation_data['tasks_length']) : $addto;
+            
+            
+            $addto_data['cheque_addto'] = (!empty($module_activation_data['cheque_length']) && !empty($module_activation_data['cheque_interval'])) ? ($this->returnDays($module_activation_data['cheque_interval']) * $module_activation_data['cheque_length']) : $addto;
+            
+            $addto_data['list_easy_addto'] = (!empty($module_activation_data['list_easy_length']) && !empty($module_activation_data['list_easy_interval'])) ? ($this->returnDays($module_activation_data['list_easy_interval']) * $module_activation_data['list_easy_length']) : $addto;
+            
+            $addto_data['pump_addto'] = (!empty($module_activation_data['pump_length']) && !empty($module_activation_data['pump_interval'])) ? ($this->returnDays($module_activation_data['pump_interval']) * $module_activation_data['pump_length']) : $addto;
+            
+            $addto_data['stock_taking_addto'] = (!empty($module_activation_data['stock_taking_length']) && !empty($module_activation_data['stock_taking_interval'])) ? ($this->returnDays($module_activation_data['stock_taking_interval']) * $module_activation_data['stock_taking_length']) : $addto;
+            
+            $addto_data['installment_module_addto'] = (!empty($module_activation_data['installment_module_length']) && !empty($module_activation_data['installment_module_interval'])) ? ($this->returnDays($module_activation_data['installment_module_interval']) * $module_activation_data['installment_module_length']) : $addto;
+            
+            
+            $addto_data['ezy_addto'] = (!empty($module_activation_data['ezy_length']) && !empty($module_activation_data['ezy_interval'])) ? ($this->returnDays($module_activation_data['ezy_interval']) * $module_activation_data['ezy_length']) : $addto;
+            
+            
+            // doc 6104
+            $addto_data['list_sms_addto'] = (!empty($module_activation_data['list_sms_length']) && !empty($module_activation_data['list_sms_interval'])) ? ($this->returnDays($module_activation_data['list_sms_interval']) * $module_activation_data['list_sms_length']) : $addto;
+            $addto_data['enable_sms_addto'] = (!empty($module_activation_data['enable_sms_length']) && !empty($module_activation_data['enable_sms_interval'])) ? ($this->returnDays($module_activation_data['enable_sms_interval']) * $module_activation_data['enable_sms_length']) : $addto;
+            $addto_data['notification_template_addto'] = (!empty($module_activation_data['notification_template_length']) && !empty($module_activation_data['notification_template_interval'])) ? ($this->returnDays($module_activation_data['notification_template_interval']) * $module_activation_data['notification_template_length']) : $addto;
+            
+            
+            // /////////////////////////////////////////////////////////////////////////////////////////////////
+            $addto_data['products_addto'] = (!empty($module_activation_data['products_length']) && !empty($module_activation_data['products_interval'])) ? ($this->returnDays($module_activation_data['products_interval']) * $module_activation_data['products_length']) : $addto;
+            $addto_data['purchase_addto'] = (!empty($module_activation_data['purchase_length']) && !empty($module_activation_data['purchase_interval'])) ? ($this->returnDays($module_activation_data['purchase_interval']) * $module_activation_data['purchase_length']) : $addto;
+            $addto_data['stock_transfer_addto'] = (!empty($module_activation_data['stock_transfer_length']) && !empty($module_activation_data['stock_transfer_interval'])) ? ($this->returnDays($module_activation_data['stock_transfer_interval']) * $module_activation_data['stock_transfer_length']) : $addto;
+            $addto_data['daily_review_addto'] = (!empty($module_activation_data['daily_review_length']) && !empty($module_activation_data['daily_review_interval'])) ? ($this->returnDays($module_activation_data['daily_review_interval']) * $module_activation_data['daily_review_length']) : $addto;
+            $addto_data['service_staff_addto'] = (!empty($module_activation_data['service_staff_length']) && !empty($module_activation_data['service_staff_interval'])) ? ($this->returnDays($module_activation_data['service_staff_interval']) * $module_activation_data['service_staff_length']) : $addto;
+            $addto_data['enable_subscription_addto'] = (!empty($module_activation_data['enable_subscription_length']) && !empty($module_activation_data['enable_subscription_interval'])) ? ($this->returnDays($module_activation_data['enable_subscription_interval']) * $module_activation_data['enable_subscription_length']) : $addto;
+            
+            
+            $addto_data['distribution_module_addto'] = (!empty($module_activation_data['distribution_module_length']) && !empty($module_activation_data['distribution_module_interval'])) ? ($this->returnDays($module_activation_data['distribution_module_interval']) * $module_activation_data['distribution_module_length']) : $addto;
+            $addto_data['spreadsheet_addto'] = (!empty($module_activation_data['spreadsheet_length']) && !empty($module_activation_data['spreadsheet_interval'])) ? ($this->returnDays($module_activation_data['spreadsheet_interval']) * $module_activation_data['spreadsheet_length']) : $addto;
+            $addto_data['essentials_addto'] = (!empty($module_activation_data['essentials_length']) && !empty($module_activation_data['essentials_interval'])) ? ($this->returnDays($module_activation_data['essentials_interval']) * $module_activation_data['essentials_length']) : $addto;
+            
+            $addto_data['price_changes_addto'] = (!empty($module_activation_data['price_changes_length']) && !empty($module_activation_data['price_changes_interval'])) ? ($this->returnDays($module_activation_data['price_changes_interval']) * $module_activation_data['price_changes_length']) : $addto;
+            $addto_data['day_end_addto'] = (!empty($module_activation_data['day_end_length']) && !empty($module_activation_data['day_end_interval'])) ? ($this->returnDays($module_activation_data['day_end_interval']) * $module_activation_data['day_end_length']) : $addto;
+            $addto_data['customer_interest_addto'] = (!empty($module_activation_data['customer_interest_length']) && !empty($module_activation_data['customer_interest_interval'])) ? ($this->returnDays($module_activation_data['customer_interest_interval']) * $module_activation_data['customer_interest_length']) : $addto;
+            
+            $addto_data['issue_customer_bill_addto'] = (!empty($module_activation_data['issue_customer_bill_length']) && !empty($module_activation_data['issue_customer_bill_interval'])) ? ($this->returnDays($module_activation_data['issue_customer_bill_interval']) * $module_activation_data['issue_customer_bill_length']) : $addto;
+            $addto_data['issue_customer_bill_vat_addto'] = (!empty($module_activation_data['issue_customer_bill_vat_length']) && !empty($module_activation_data['issue_customer_bill_vat_interval'])) ? ($this->returnDays($module_activation_data['issue_customer_bill_vat_interval']) * $module_activation_data['issue_customer_bill_vat_length']) : $addto;
+            
+            $addto_data['post_dated_addto'] = (!empty($module_activation_data['post_dated_length']) && !empty($module_activation_data['post_dated_interval'])) ? ($this->returnDays($module_activation_data['post_dated_interval']) * $module_activation_data['post_dated_length']) : $addto;
+            $addto_data['vat_addto'] = (!empty($module_activation_data['vat_length']) && !empty($module_activation_data['vat_interval'])) ? ($this->returnDays($module_activation_data['vat_interval']) * $module_activation_data['vat_length']) : $addto;
+            
+            $addto_data['bakery_addto'] = (!empty($module_activation_data['bakery_length']) && !empty($module_activation_data['bakery_interval'])) ? ($this->returnDays($module_activation_data['bakery_interval']) * $module_activation_data['bakery_length']) : $addto;
+            
+            $addto_data['subscriptions_addto'] = (!empty($module_activation_data['subscriptions_length']) && !empty($module_activation_data['subscriptions_interval'])) ? ($this->returnDays($module_activation_data['subscriptions_interval']) * $module_activation_data['subscriptions_length']) : $addto;
+            
+            $addto_data['smsmodule_addto'] = (!empty($module_activation_data['smsmodule_length']) && !empty($module_activation_data['smsmodule_interval'])) ? ($this->returnDays($module_activation_data['smsmodule_interval']) * $module_activation_data['smsmodule_length']) : $addto;
+            
+            
+            // expiry dates
+            $module_activation_data['mf_expiry_date'] =   $request->mf_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['mf_addto']} day",strtotime($request->mf_activated_on))) : null;
+            $module_activation_data['ac_expiry_date'] =   $request->ac_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['ac_addto']} day",strtotime($request->ac_activated_on))) : null;
+            
+            $module_activation_data['deposits_expiry_date'] =   $request->deposits_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['deposits_addto']} day",strtotime($request->deposits_activated_on))) : null;
+            
+            $module_activation_data['crm_module_expiry_date'] =   $request->crm_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['crm_addto']} day",strtotime($request->crm_module_activated_on))) : null;
+            $module_activation_data['ezyinvoice_module_expiry_date'] =   $request->ezyinvoice_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['ezyinvoice_addto']} day",strtotime($request->ezyinvoice_module_activated_on))) : null;
+            $module_activation_data['airline_module_expiry_date'] =   $request->airline_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['airline_addto']} day",strtotime($request->airline_module_activated_on))) : null;
+            $module_activation_data['shipping_module_expiry_date'] =   $request->shipping_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['shipping_addto']} day",strtotime($request->shipping_module_activated_on))) : null;
+            $module_activation_data['asset_module_expiry_date'] =   $request->asset_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['asset_addto']} day",strtotime($request->asset_module_activated_on))) : null;
+            $module_activation_data['hms_module_expiry_date'] =   $request->hms_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['hms_addto']} day",strtotime($request->hms_module_activated_on))) : null;
+            
+            
+            $module_activation_data['access_module_expiry_date'] =   $request->access_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['access_module_addto']} day",strtotime($request->access_module_activated_on))) : null;
+            $module_activation_data['hr_expiry_date'] =   $request->hr_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['hr_addto']} day",strtotime($request->hr_activated_on))) : null;
+            $module_activation_data['vreg_expiry_date'] =   $request->vreg_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['vreg_addto']} day",strtotime($request->vreg_activated_on))) : null;
+            $module_activation_data['petro_expiry_date'] =   $request->petro_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['petro_addto']} day",strtotime($request->petro_activated_on))) : null;
+            $module_activation_data['repair_expiry_date'] =   $request->repair_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['repair_addto']} day",strtotime($request->repair_activated_on))) : null;
+            $module_activation_data['fleet_expiry_date'] =   $request->fleet_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['fleet_addto']} day",strtotime($request->fleet_activated_on))) : null;
+            $module_activation_data['mpcs_expiry_date'] =   $request->mpcs_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['mpcs_addto']} day",strtotime($request->mpcs_activated_on))) : null;
+            $module_activation_data['backup_expiry_date'] =   $request->backup_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['backup_addto']} day",strtotime($request->backup_activated_on))) : null;
+            $module_activation_data['property_expiry_date'] =   $request->property_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['property_addto']} day",strtotime($request->property_activated_on))) : null;
+            $module_activation_data['auto_expiry_date'] =   $request->auto_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['auto_addto']} day",strtotime($request->auto_activated_on))) : null;
+            $module_activation_data['contact_expiry_date'] =   $request->contact_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['contact_addto']} day",strtotime($request->contact_activated_on))) : null;
+            $module_activation_data['ran_expiry_date'] =   $request->ran_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['ran_addto']} day",strtotime($request->ran_activated_on))) : null;
+            $module_activation_data['report_expiry_date'] =   $request->report_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['report_addto']} day",strtotime($request->report_activated_on))) : null;
+            $module_activation_data['settings_expiry_date'] =   $request->settings_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['settings_addto']} day",strtotime($request->settings_activated_on))) : null;
+            $module_activation_data['um_expiry_date'] =   $request->um_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['um_addto']} day",strtotime($request->um_activated_on))) : null;
+            $module_activation_data['banking_expiry_date'] =   $request->banking_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['banking_addto']} day",strtotime($request->banking_activated_on))) : null;
+            $module_activation_data['sale_expiry_date'] =   $request->sale_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['sale_addto']} day",strtotime($request->sale_activated_on))) : null;
+            $module_activation_data['leads_expiry_date'] =   $request->leads_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['leads_addto']} day",strtotime($request->leads_activated_on))) : null; // new modules added
+            
+            $module_activation_data['hospital_expiry_date'] =   $request->hospital_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['hospital_addto']} day",strtotime($request->hospital_activated_on))) : null;
+            
+            $module_activation_data['restaurant_expiry_date'] =   $request->restaurant_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['restaurant_addto']} day",strtotime($request->restaurant_activated_on))) : null;
+            
+            $module_activation_data['duplicate_invoice_expiry_date'] =   $request->duplicate_invoice_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['duplicate_invoice_addto']} day",strtotime($request->duplicate_invoice_activated_on))) : null;
+            
+            $module_activation_data['tasks_expiry_date'] =   $request->tasks_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['tasks_addto']} day",strtotime($request->tasks_activated_on))) : null;
+            
+            $module_activation_data['cheque_expiry_date'] =   $request->cheque_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['cheque_addto']} day",strtotime($request->cheque_activated_on))) : null;
+            
+            $module_activation_data['list_easy_expiry_date'] =   $request->list_easy_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['list_easy_addto']} day",strtotime($request->list_easy_activated_on))) : null;
+            
+            $module_activation_data['pump_expiry_date'] =   $request->pump_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['pump_addto']} day",strtotime($request->pump_activated_on))) : null;
+            
+            $module_activation_data['stock_taking_expiry_date'] =   $request->stock_taking_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['stock_taking_addto']} day",strtotime($request->stock_taking_activated_on))) : null;
+            
+            $module_activation_data['installment_module_expiry_date'] =   $request->installment_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['installment_module_addto']} day",strtotime($request->installment_module_activated_on))) : null;
+            
+            
+            // doc 6104
+            $module_activation_data['list_sms_expiry_date'] =   $request->list_sms_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['list_sms_addto']} day",strtotime($request->list_sms_activated_on))) : null;
+            $module_activation_data['enable_sms_expiry_date'] =   $request->enable_sms_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['enable_sms_addto']} day",strtotime($request->enable_sms_activated_on))) : null;
+            $module_activation_data['notification_template_expiry_date'] =   $request->notification_template_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['notification_template_addto']} day",strtotime($request->notification_template_activated_on))) : null;
+            
+
+            // //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            $module_activation_data['products_expiry_date'] =   $request->products_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['products_addto']} day",strtotime($request->products_activated_on))) : null;
+            $module_activation_data['purchase_expiry_date'] =   $request->purchase_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['purchase_addto']} day",strtotime($request->purchase_activated_on))) : null;
+            $module_activation_data['stock_transfer_expiry_date'] =   $request->stock_transfer_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['stock_transfer_addto']} day",strtotime($request->stock_transfer_activated_on))) : null;
+            $module_activation_data['daily_review_expiry_date'] =   $request->daily_review_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['daily_review_addto']} day",strtotime($request->daily_review_activated_on))) : null;
+            $module_activation_data['service_staff_expiry_date'] =   $request->service_staff_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['service_staff_addto']} day",strtotime($request->service_staff_activated_on))) : null;
+            $module_activation_data['enable_subscription_expiry_date'] =   $request->enable_subscription_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['enable_subscription_addto']} day",strtotime($request->enable_subscription_activated_on))) : null;
+            
+            
+            $module_activation_data['distribution_module_expiry_date'] =   $request->distribution_module_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['distribution_module_addto']} day",strtotime($request->distribution_module_activated_on))) : null;
+            $module_activation_data['spreadsheet_expiry_date'] =   $request->spreadsheet_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['spreadsheet_addto']} day",strtotime($request->spreadsheet_activated_on))) : null;
+            $module_activation_data['essentials_expiry_date'] =   $request->essentials_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['essentials_addto']} day",strtotime($request->essentials_activated_on))) : null;
+            
+            
+            $module_activation_data['price_changes_expiry_date'] =   $request->price_changes_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['price_changes_addto']} day",strtotime($request->price_changes_activated_on))) : null;
+            $module_activation_data['day_end_expiry_date'] =   $request->day_end_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['day_end_addto']} day",strtotime($request->day_end_activated_on))) : null;
+            $module_activation_data['customer_interest_expiry_date'] =   $request->customer_interest_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['customer_interest_addto']} day",strtotime($request->customer_interest_activated_on))) : null;
+            
+            $module_activation_data['issue_customer_bill_expiry_date'] =   $request->issue_customer_bill_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['issue_customer_bill_addto']} day",strtotime($request->issue_customer_bill_activated_on))) : null;
+            $module_activation_data['issue_customer_bill_vat_expiry_date'] =   $request->issue_customer_bill_vat_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['issue_customer_bill_vat_addto']} day",strtotime($request->issue_customer_bill_vat_activated_on))) : null;
+            
+            $module_activation_data['post_dated_expiry_date'] =   $request->post_dated_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['post_dated_addto']} day",strtotime($request->post_dated_activated_on))) : null;
+            
+            $module_activation_data['vat_expiry_date'] =   $request->vat_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['vat_addto']} day",strtotime($request->vat_activated_on))) : null;
+            
+            $module_activation_data['bakery_expiry_date'] =   $request->bakery_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['bakery_addto']} day",strtotime($request->bakery_activated_on))) : null;
+            
+            $module_activation_data['subscriptions_expiry_date'] =   $request->subscriptions_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['subscriptions_addto']} day",strtotime($request->subscriptions_activated_on))) : null;
+            
+            $module_activation_data['smsmodule_expiry_date'] =   $request->smsmodule_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['smsmodule_addto']} day",strtotime($request->smsmodule_activated_on))) : null;
+            
+            $module_activation_data['ezy_expiry_date'] =   $request->ezy_activated_on ?  date('Y-m-d',strtotime("+{$addto_data['ezy_addto']} day",strtotime($request->ezy_activated_on))) : null;
+         
+            // update module activation data
+            $ma_data =  Subscription::find($subscription->id);
+            $ma_data->module_activation_details = json_encode($module_activation_data);
+            $ma_data->customer_credit_notification_type = json_encode($request->customer_credit_notification_type);
+            $ma_data->save();
+            
+ 
+            // update account numbers
+            $account_nos = !empty($request->account_nos) ? $request->account_nos : [];
+            
+            if(!empty($account_nos)){
+                foreach($account_nos as $key => $account_no){
+                    AccountNumber::where('id',$key)->update(['prefix' => $account_no['prefix'],'account_number' => $account_no['account_number']]);
+                }
+            }
+            
+            
+            
+            $business_details = $request->only(['sms_settings']);
+            if (!empty($business_details) &&  $request->input('access_sms_settings') == 1) {
+                $business->fill($business_details);
+                $business->save();
+            }
+            
+
+            //set default account mapping for locations
+            foreach ($request->default_payment_accounts as $key => $default_payment_account) {
+                $payments = [];
+                foreach($default_payment_account['name'] as $k => $one){
+                    $payments[$one] = array("is_enabled" => $default_payment_account['is_enabled'][$k],
+                                            
+                                            "is_purchase_enabled" => $default_payment_account['is_purchase_enabled'][$k],
+                                            "is_sale_enabled" => $default_payment_account['is_sale_enabled'][$k],
+                                            "is_expense_enabled" => $default_payment_account['is_expense_enabled'][$k],
+                                            "is_purchase_return_enabled" => $default_payment_account['is_purchase_return_enabled'][$k],
+                                            "is_sale_return_enabled" => $default_payment_account['is_sale_return_enabled'][$k],
+                    
+                                            'is_custom' =>$default_payment_account['is_custom'][$k],
+                                            'account' =>$default_payment_account['account'][$k]);
+                }
+                
+                // dd($payments);
+                
+                BusinessLocation::where('id', $key)->update(['default_payment_accounts' => $payments]);
+            }
+
+            //remove all previous accounting value for business
+            if (!empty($request->zero_previous_accounting_values) && $request->zero_previous_accounting_values == 1) {
+                $this->deleteAllPreviousAccountTransactions($id);
+            }
+            //hide accounts if superadmin not checked
+            $business_accounts = Account::where('business_id', $id)->get();
+//            $accounts_enabled =  $request->accounts_enabled;
+//            foreach ($business_accounts as $value) {
+//                Account::where('id', $value->id)->update(['visible' => array_key_exists($value->id, $accounts_enabled) ? 1 : 0]);
+//            }
+
+            //set location of module permission allowed
+            if (!empty($request->module_permission_location)) {
+                foreach ($request->module_permission_location as $key => $prems) {
+                    $module_permission_location_data = array(
+                        'business_id' => $id,
+                        'module_name' => $key,
+                        'locations' => $prems
+                    );
+
+                    ModulePermissionLocation::updateOrCreate(['business_id' => $id, 'module_name' => $key], $module_permission_location_data);
+                }
+            }
+
+            //save sale_import_date to business
+            $sale_import_date = $request->sale_import_date;
+            $purchase_import_date = $request->purchase_import_date;
+            $sale_date = null;
+            $purchase_date = null;
+            if (!empty($sale_import_date)) {
+                $sale_date = \Carbon::parse($sale_import_date)->format('Y-m-d');
+            }
+            if (!empty($purchase_import_date)) {
+                $purchase_date = \Carbon::parse($purchase_import_date)->format('Y-m-d');
+            }
+            Business::where('id', $id)->update(['sale_import_date' => $sale_date, 'purchase_import_date' => $purchase_date]);
+
+            
+            $moudle_permissions = Subscription::getBusinessPermissionsArray();
+
+            
+
+            $module_enable_price = [];
+            $manage_module_enable = [];
+            $moudles = $request->only($moudle_permissions);
+            if (!empty($subscription)) {
+                $package_details = $subscription->package_details;
+            } else {
+                $package_details = [];
+            }
+            foreach ($moudle_permissions as $permission) {
+                if (array_key_exists($permission, $moudles)) {
+                    if ($moudles[$permission]) { //module has amount value
+                        $module_enable_price[$permission] = (float) $request->input($permission . '_value'); //input values
+                        $manage_module_enable[$permission] = $request->input($permission); //checkboxes
+
+                        $package_details[$permission] = 1;
+                        $package_details['manufacturing_module'] = !empty($manage_module_enable['mf_module']) ? $manage_module_enable['mf_module'] : 0;
+                        $package_details['enable_petro_module'] = 1;
+
+                        if (!empty($subscription)) {
+                            Subscription::where('id', $subscription->id)->update(['package_details->' . $permission => '1']);
+                        }
+                    }
+                } else {
+                    if (!empty($subscription)) {
+                        Subscription::where('id', $subscription->id)->update(['package_details->' . $permission => '0']);
+                    }
+                }
+            }
+            
+            
+            $other_permissions_array = array(
+                'purchase',
+                'stock_transfer',
+                'service_staff',
+                'enable_subscription',
+                'add_sale',
+                'stock_adjustment',
+                'tables',
+                'type_of_service',
+                'pos_sale',
+                'expenses',
+                'modifiers',
+                'kitchen',
+                'customer_interest_deduct_option',
+                'allowance_deduction',
+                'work_shift',
+                'essentials_todo',
+                'essentials_document',
+                'essentials_memos',
+                'essentials_reminders',
+                'essentials_messages',
+                'essentials_settings',
+                'petro_dashboard',
+                'petro_daily_status',
+                'tank_transfer',
+                'petro_task_management',
+                'pump_management',
+                'pump_management_testing',
+                'meter_resetting',
+                'meter_reading',
+                'pump_dashboard_opening',
+                'pumper_management',
+                'daily_collection',
+                'settlement',
+                'list_settlement',
+                'delete_settlement',
+                'dip_management',
+                'fuel_tanks_edit',
+                'fuel_tanks_delete',
+                'pumps_edit',
+                'pumps_delete',
+                'contact_supplier',
+                'contact_customer',
+                'contact_group_customer',
+                'contact_group_supplier',
+                'import_contact',
+                'customer_reference',
+                'customer_statement',
+                'customer_payment',
+                'outstanding_received',
+                'stock_taking_page',
+                'issue_payment_detail',
+                'edit_received_outstanding',
+                'product_report',
+                'payment_status_report',
+                'report_daily',
+                'report_daily_summary',
+                'report_register',
+                'report_profit_loss',
+                'report_credit_status',
+                'activity_report',
+                'contact_report',
+                'trending_product',
+                'user_activity',
+                'report_verification',
+                'report_table',
+                'report_staff_service',
+                'pos_button_on_top_belt',
+                'all_purchase',
+                'add_purchase',
+                'add_bulk_purchase',
+                'import_purchase',
+                'pop_button_on_top_belt',
+                'purchase_return',
+                'cheque_templates',
+                'write_cheque',
+                'manage_stamps',
+                'manage_payee',
+                'cheque_number_list',
+                'deleted_cheque_details',
+                'printed_cheque_details',
+                'default_setting','same_order_no','acc_no_manually',
+                
+                'fleet_settings','add_trip_operations','list_fleet','milage_changes','list_trip_operations','fleet_invoices','fuel_management','fleet_p_l',
+                'edit_ob',
+                
+                'dip_resetting','edit_settlement','customer_payment_simple','customer_payment_bulk','list_customer_payments','customer_interest','interest_settings'
+            );
+            $other_permissions = [];
+            
+            // dd($request->acc_no_manually);
+
+            foreach ($other_permissions_array as $value) {
+                if (!empty($request->$value)) {
+                    $other_permissions[$value] = 1;
+                } else {
+                    $other_permissions[$value] = 0;
+                }
+            }
+     
+            
+
+
+
+            //upadting other permission for current company
+            if (!empty($subscription)) {
+                $subscription = Subscription::where('id', $subscription->id)->select('id', 'package_details')->first();
+
+                $package_details = $subscription->package_details;
+                foreach ($other_permissions_array as $value) {
+                    $package_details[$value] = $other_permissions[$value];
+                }
+                //updating these new value to subscription
+                $package_details['location_count'] = isset($request->location_count) ? $request->location_count : 1;
+                $package_details['register_count'] = $request->register_count;
+                $package_details['product_count'] = isset($request->product_count) ? $request->product_count : 1;
+                $package_details['vehicle_count'] = isset($request->vehicle_count) ? $request->vehicle_count : 1;
+                
+                $package_details['reminder_phone'] = isset($request->reminder_phone) ? json_encode($request->reminder_phone ): json_encode(array());
+                $package_details['first_reminder'] = $request->first_reminder;
+                $package_details['second_reminder'] = $request->second_reminder;
+                $package_details['third_reminder'] = $request->third_reminder;
+                $package_details['message_content'] = $request->message_content;
+                $package_details['vat_effective_date'] = $request->vat_effective_date;
+                
+                $package_details['post_dated_cheques_effective_date'] = $request->post_dated_cheques_effective_date;
+                
+                $package_details['rename_cash_tab'] = isset($request->rename_cash_tab) ? $request->rename_cash_tab : 0;
+                
+                $package_details['notsubscribed_message_content'] = $request->notsubscribed_message_content;
+                $package_details['ns_deposit_module'] = isset($request->ns_deposit_module) ? $request->ns_deposit_module : 0;
+                $package_details['ns_asset_management'] = isset($request->ns_asset_management) ? $request->ns_asset_management : 0;
+                $package_details['ns_vat_module'] = isset($request->ns_vat_module) ? $request->ns_vat_module : 0;
+                $package_details['ns_discount_module'] = isset($request->ns_discount_module) ? $request->ns_discount_module : 0;
+                $package_details['ns_dsr_module'] = isset($request->ns_dsr_module) ? $request->ns_dsr_module : 0;
+                
+                $package_details['ns_cash'] = isset($request->ns_cash) ? $request->ns_cash : 0;
+                $package_details['ns_cash_deposit'] = isset($request->ns_cash_deposit) ? $request->ns_cash_deposit : 0;
+                $package_details['ns_cards'] = isset($request->ns_cards) ? $request->ns_cards : 0;
+                $package_details['ns_cheques'] = isset($request->ns_cheques) ? $request->ns_cheques : 0;
+                $package_details['ns_expenses'] = isset($request->ns_expenses) ? $request->ns_expenses : 0;
+                $package_details['ns_shortage'] = isset($request->ns_shortage) ? $request->ns_shortage : 0;
+                $package_details['ns_petro_sms_notifications'] = isset($request->ns_petro_sms_notifications) ? $request->ns_petro_sms_notifications : 0;
+                
+                $package_details['ns_excess'] = isset($request->ns_excess) ? $request->ns_excess : 0;
+                $package_details['ns_credit_sales'] = isset($request->ns_credit_sales) ? $request->ns_credit_sales : 0;
+                $package_details['ns_loan_payments'] = isset($request->ns_loan_payments) ? $request->ns_loan_payments : 0;
+                $package_details['ns_drawing_payments'] = isset($request->ns_drawing_payments) ? $request->ns_drawing_payments : 0;
+                $package_details['ns_customer_loans'] = isset($request->ns_customer_loans) ? $request->ns_customer_loans : 0;
+                
+                
+                $package_details['allowed_tanks'] = isset($request->allowed_tanks) ? $request->allowed_tanks : 1;
+                $package_details['ns_font_family'] = !empty($request->ns_font_family) ? $request->ns_font_family : "Calibri,san serif";
+                $package_details['ns_font_size'] = !empty($request->ns_font_size) ? $request->ns_font_size : "12";
+                $package_details['ns_font_color'] = !empty($request->ns_font_color) ? $request->ns_font_color : "#000000";
+                $package_details['ns_background_color'] = !empty($request->ns_background_color) ? $request->ns_background_color : "#FFFFFF";
+                
+                $package_details['daily_review'] = !empty($request->daily_review) ? $request->daily_review : 0;
+                $package_details['select_pump_operator_in_settlement'] = !empty($request->select_pump_operator_in_settlement) ? $request->select_pump_operator_in_settlement : 0;
+                
+                // set defaults
+                if(!isset($package_details['mf_module'])) {
+                    $package_details['mf_module'] = 0;
+                }
+                
+                if(!isset($package_details['restore_module'])) {
+                    $package_details['restore_module'] = 0;
+                }
+                
+                if(!isset($package_details["access_account"])) {
+                    $package_details["access_account"] = 0;
+                }
+                
+                if(!isset($package_details["access_module"])) {
+                    $package_details["access_module"] = 0;
+                }
+                if(!isset($package_details["hr_module"])) {
+                    $package_details["hr_module"] = 0;
+                }
+                
+                if(!isset($package_details["visitors_registration_module"])) {
+                    $package_details["visitors_registration_module"] = 0;
+                }
+                
+                if(!isset($package_details["enable_petro_module"])) {
+                    $package_details["enable_petro_module"] = 0;
+                }
+                
+                if(!isset($package_details["repair_module"])) {
+                    $package_details["repair_module"] = 0;
+                }
+                
+                if(!isset($package_details["fleet_module"])) {
+                    $package_details["fleet_module"] = 0;
+                }
+                
+                if(!isset($package_details["mpcs_module"])) {
+                    $package_details["mpcs_module"] = 0;
+                }
+                
+                if(!isset($package_details["backup_module"])) {
+                    $package_details["backup_module"] = 0;
+                }
+                
+                if(!isset($package_details["property_module"])) {
+                    $package_details["property_module"] = 0;
+                }
+                
+                if(!isset($package_details["auto_services_and_repair_module"])) {
+                    $package_details["auto_services_and_repair_module"] = 0;
+                }
+                
+                if(!isset($package_details["stock_taking_module"])) {
+                    $package_details["stock_taking_module"] = 0;
+                }
+                
+                if(!isset($package_details["installment_module"])) {
+                    $package_details["installment_module"] = 0;
+                }
+                
+                
+                if(!isset($package_details["contact_module"])) {
+                    $package_details["contact_module"] = 0;
+                }
+                
+                if(!isset($package_details["ran_module"])) {
+                    $package_details["ran_module"] = 0;
+                }
+                
+                if(!isset($package_details["report_module"])) {
+                    $package_details["report_module"] = 0;
+                }
+                
+                if(!isset($package_details["settings_module"])) {
+                    $package_details["settings_module"] = 0;
+                }
+                
+                if(!isset($package_details["user_management_module"])) {
+                    $package_details["user_management_module"] = 0;
+                }
+                
+                if(!isset($package_details["banking_module"])) {
+                    $package_details["banking_module"] = 0;
+                }
+                
+                if(!isset($package_details["sale_module"])) {
+                    $package_details["sale_module"] = 0;
+                }
+                
+                if(!isset($package_details["leads_module"])) {
+                    $package_details["leads_module"] = 0;
+                }
+                
+                if(!isset($package_details["deposits_module"])) {
+                    $package_details["deposits_module"] = 0;
+                }
+                
+                if(!isset($package_details["ezyinvoice_module"])) {
+                    $package_details["ezyinvoice_module"] = 0;
+                }
+                
+                 if(!isset($package_details["crm_module"])) {
+                    $package_details["crm_module"] = 0;
+                }
+                
+                if(!isset($package_details["shipping_module"])) {
+                    $package_details["shipping_module"] = 0;
+                }
+                
+                if(!isset($package_details["airline_module"])) {
+                    $package_details["airline_module"] = 0;
+                }
+                
+                if(!isset($package_details["asset_module"])) {
+                    $package_details["asset_module"] = 0;
+                }
+                
+                if(!isset($package_details["hms_module"])) {
+                    $package_details["hms_module"] = 0;
+                }
+
+      
+                $package_details['restore_module'] = !empty($request->restore_module) ? 1 : 0;
+                $package_details['mf_module'] = strtotime($module_activation_data['mf_expiry_date']) > time() ? 1 : $package_details['mf_module'];
+                $package_details["access_account"] = strtotime($module_activation_data['ac_expiry_date']) > time() ? 1 : $package_details["access_account"];
+                
+                $package_details["deposits_module"] = strtotime($module_activation_data['deposits_expiry_date']) > time() ? 1 : $package_details["deposits_module"];
+                
+                $package_details["crm_module"] = strtotime($module_activation_data['crm_module_expiry_date']) > time() ? 1 : $package_details["crm_module"];
+                $package_details["ezyinvoice_module"] = strtotime($module_activation_data['ezyinvoice_module_expiry_date']) > time() ? 1 : $package_details["ezyinvoice_module"];
+                $package_details["airline_module"] = strtotime($module_activation_data['airline_module_expiry_date']) > time() ? 1 : $package_details["airline_module"];
+                $package_details["shipping_module"] = strtotime($module_activation_data['shipping_module_expiry_date']) > time() ? 1 : $package_details["shipping_module"];
+                $package_details["asset_module"] = strtotime($module_activation_data['asset_module_expiry_date']) > time() ? 1 : $package_details["asset_module"];
+                $package_details["hms_module"] = strtotime($module_activation_data['hms_module_expiry_date']) > time() ? 1 : $package_details["hms_module"];
+                
+                $package_details["access_module"] = strtotime($module_activation_data['access_module_expiry_date']) > time() ? 1 : $package_details["access_module"];
+                $package_details["hr_module"] = strtotime($module_activation_data['hr_expiry_date']) > time() ? 1 : $package_details["hr_module"];
+                $package_details["visitors_registration_module"] = strtotime($module_activation_data['vreg_expiry_date']) > time() ? 1 : $package_details["visitors_registration_module"];
+                $package_details["enable_petro_module"] = strtotime($module_activation_data['petro_expiry_date']) > time() ? 1 : $package_details["enable_petro_module"];
+                $package_details["repair_module"] = strtotime($module_activation_data['repair_expiry_date']) > time() ? 1 : $package_details["repair_module"];
+                $package_details["fleet_module"] = strtotime($module_activation_data['fleet_expiry_date']) > time() ? 1 : $package_details["fleet_module"];
+                $package_details["mpcs_module"] = strtotime($module_activation_data['mpcs_expiry_date']) > time() ? 1 : $package_details["mpcs_module"];
+                $package_details["backup_module"] = strtotime($module_activation_data['backup_expiry_date']) > time() ? 1 : $package_details["backup_module"];
+                $package_details["property_module"] = strtotime($module_activation_data['property_expiry_date']) > time() ? 1 : $package_details["property_module"];
+                $package_details["auto_services_and_repair_module"] = strtotime($module_activation_data['auto_expiry_date']) > time() ? 1 : $package_details["auto_services_and_repair_module"];
+                $package_details["contact_module"] = strtotime($module_activation_data['contact_expiry_date']) > time() ? 1 : $package_details["contact_module"];
+                $package_details["ran_module"] = strtotime($module_activation_data['ran_expiry_date']) > time() ? 1 : $package_details["ran_module"];
+                $package_details["report_module"] = strtotime($module_activation_data['report_expiry_date']) > time() ? 1 : $package_details["report_module"];
+                $package_details["settings_module"] = strtotime($module_activation_data['settings_expiry_date']) > time() ? 1 : $package_details["settings_module"];
+                $package_details["user_management_module"] = strtotime($module_activation_data['um_expiry_date']) > time() ? 1 : $package_details["user_management_module"];
+                $package_details["banking_module"] = strtotime($module_activation_data['banking_expiry_date']) > time() ? 1 : $package_details["banking_module"];
+                $package_details["sale_module"] = strtotime($module_activation_data['sale_expiry_date']) > time() ? 1 : $package_details["sale_module"];
+                $package_details["leads_module"] = strtotime($module_activation_data['leads_expiry_date']) > time() ? 1 : $package_details["leads_module"]; // new module added
+                
+                $package_details["hospital_system"] = strtotime($module_activation_data['hospital_expiry_date']) > time() ? 1 : $package_details["hospital_system"];
+                
+                $package_details["enable_restaurant"] = strtotime($module_activation_data['restaurant_expiry_date']) > time() ? 1 : $package_details["enable_restaurant"];
+                
+                $package_details["enable_duplicate_invoice"] = strtotime($module_activation_data['duplicate_invoice_expiry_date']) > time() ? 1 : $package_details["enable_duplicate_invoice"];
+                
+                $package_details["tasks_management"] = strtotime($module_activation_data['tasks_expiry_date']) > time() ? 1 : $package_details["tasks_management"];
+                
+                $package_details["enable_cheque_writing"] = strtotime($module_activation_data['cheque_expiry_date']) > time() ? 1 : $package_details["enable_cheque_writing"];
+                
+                $package_details["list_easy_payment"] = strtotime($module_activation_data['list_easy_expiry_date']) > time() ? 1 : $package_details["list_easy_payment"];
+                
+                $package_details["pump_operator_dashboard"] = strtotime($module_activation_data['pump_expiry_date']) > time() ? 1 : $package_details["pump_operator_dashboard"];
+                
+                $package_details["stock_taking_module"] = strtotime($module_activation_data['stock_taking_expiry_date']) > time() ? 1 : $package_details["stock_taking_module"];
+                
+                $package_details["installment_module"] = strtotime($module_activation_data['installment_module_expiry_date']) > time() ? 1 : $package_details["installment_module"];
+                
+                
+                $package_details["ezy_products"] = strtotime($module_activation_data['ezy_expiry_date']) > time() ? 1 : 0;
+                
+                
+                // doc 6104
+                $package_details["list_sms"] = strtotime($module_activation_data['list_sms_expiry_date']) > time() ? 1 : $package_details["list_sms"];
+                $package_details["enable_sms"] = strtotime($module_activation_data['enable_sms_expiry_date']) > time() ? 1 : $package_details["enable_sms"];
+                $package_details["notification_template_module"] = strtotime($module_activation_data['notification_template_expiry_date']) > time() ? 1 : $package_details["notification_template_module"];
+                
+                
+                // //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                $package_details["products"] = strtotime($module_activation_data['products_expiry_date']) > time() ? 1 : $package_details["products"];
+                $package_details["purchase"] = strtotime($module_activation_data['purchase_expiry_date']) > time() ? 1 : $package_details["purchase"];
+                $package_details["stock_transfer"] = strtotime($module_activation_data['stock_transfer_expiry_date']) > time() ? 1 : $package_details["stock_transfer"];
+                $package_details["daily_review"] = strtotime($module_activation_data['daily_review_expiry_date']) > time() ? 1 : $package_details["daily_review"];
+                $package_details["service_staff"] = strtotime($module_activation_data['service_staff_expiry_date']) > time() ? 1 : $package_details["service_staff"];
+                $package_details["enable_subscription"] = strtotime($module_activation_data['enable_subscription_expiry_date']) > time() ? 1 : $package_details["enable_subscription"];
+                
+                
+                $package_details["distribution_module"] = strtotime($module_activation_data['distribution_module_expiry_date']) > time() ? 1 : 0;
+                $package_details["spreadsheet"] = strtotime($module_activation_data['spreadsheet_expiry_date']) > time() ? 1 : 0;
+                $package_details["essentials_module"] = strtotime($module_activation_data['essentials_expiry_date']) > time() ? 1 : 0;
+                
+                $package_details["price_changes_module"] = strtotime($module_activation_data['price_changes_expiry_date']) > time() ? 1 : 0;
+                $package_details["day_end_module"] = strtotime($module_activation_data['day_end_expiry_date']) > time() ? 1 : 0;
+                $package_details["customer_interest_module"] = strtotime($module_activation_data['customer_interest_expiry_date']) > time() ? 1 : 0;
+                $package_details["issue_customer_bill"] = strtotime($module_activation_data['issue_customer_bill_expiry_date']) > time() ? 1 : 0;
+                $package_details["issue_customer_bill_vat"] = strtotime($module_activation_data['issue_customer_bill_vat_expiry_date']) > time() ? 1 : 0;
+                
+                $package_details["post_dated_cheque"] = strtotime($module_activation_data['post_dated_expiry_date']) > time() ? 1 : 0;
+                $package_details["vat_module"] = strtotime($module_activation_data['vat_expiry_date']) > time() ? 1 : 0;
+                $package_details["subscriptions_module"] = strtotime($module_activation_data['subscriptions_expiry_date']) > time() ? 1 : 0;
+                
+                $package_details["smsmodule_module"] = strtotime($module_activation_data['smsmodule_expiry_date']) > time() ? 1 : 0;
+                
+                $package_details["bakery_module"] = strtotime($module_activation_data['bakery_expiry_date']) > time() ? 1 : 0;
+                
+                $package_details['mf_module'] = strtotime($module_activation_data['mf_expiry_date']) < time() ? 0 : $package_details['mf_module'];
+                $package_details["access_account"] = strtotime($module_activation_data['ac_expiry_date']) < time() ? 0 : $package_details["access_account"];
+                
+                $package_details["deposits_module"] = strtotime($module_activation_data['deposits_expiry_date']) < time() ? 0 : $package_details["deposits_module"];
+                
+                $package_details["crm_module"] = strtotime($module_activation_data['crm_module_expiry_date']) < time() ? 0 : $package_details["crm_module"];
+                $package_details["ezyinvoice_module"] = strtotime($module_activation_data['ezyinvoice_module_expiry_date']) < time() ? 0 : $package_details["ezyinvoice_module"];
+                $package_details["airline_module"] = strtotime($module_activation_data['airline_module_expiry_date']) < time() ? 0 : $package_details["airline_module"];
+                $package_details["shipping_module"] = strtotime($module_activation_data['shipping_module_expiry_date']) < time() ? 0 : $package_details["shipping_module"];
+                $package_details["asset_module"] = strtotime($module_activation_data['asset_module_expiry_date']) < time() ? 0 : $package_details["asset_module"];
+                $package_details["hms_module"] = strtotime($module_activation_data['hms_module_expiry_date']) < time() ? 0 : $package_details["hms_module"];
+                
+                $package_details["access_module"] = strtotime($module_activation_data['access_module_expiry_date']) < time() ? 0 : $package_details["access_module"];
+                $package_details["hr_module"] = strtotime($module_activation_data['hr_expiry_date']) < time() ? 0 : $package_details["hr_module"];
+                $package_details["visitors_registration_module"] = strtotime($module_activation_data['vreg_expiry_date']) < time() ? 0 : $package_details["visitors_registration_module"];
+                $package_details["enable_petro_module"] = strtotime($module_activation_data['petro_expiry_date']) < time() ? 0 : $package_details["enable_petro_module"];
+                $package_details["repair_module"] = strtotime($module_activation_data['repair_expiry_date']) < time() ? 0 : $package_details["repair_module"];
+                $package_details["fleet_module"] = strtotime($module_activation_data['fleet_expiry_date']) < time() ? 0 : $package_details["fleet_module"];
+                $package_details["mpcs_module"] = strtotime($module_activation_data['mpcs_expiry_date']) < time() ? 0 : $package_details["mpcs_module"];
+                $package_details["backup_module"] = strtotime($module_activation_data['backup_expiry_date']) < time() ? 0 : $package_details["backup_module"];
+                $package_details["property_module"] = strtotime($module_activation_data['property_expiry_date']) < time() ? 0 : $package_details["property_module"];
+                $package_details["auto_services_and_repair_module"] = strtotime($module_activation_data['auto_expiry_date']) < time() ? 0 : $package_details["auto_services_and_repair_module"];
+                $package_details["contact_module"] = strtotime($module_activation_data['contact_expiry_date']) < time() ? 0 : $package_details["contact_module"];
+                $package_details["ran_module"] = strtotime($module_activation_data['ran_expiry_date']) < time() ? 0 : $package_details["ran_module"];
+                $package_details["report_module"] = strtotime($module_activation_data['report_expiry_date']) < time() ? 0 : $package_details["report_module"];
+                $package_details["settings_module"] = strtotime($module_activation_data['settings_expiry_date']) < time() ? 0 : $package_details["settings_module"];
+                $package_details["user_management_module"] = strtotime($module_activation_data['um_expiry_date']) < time() ? 0 : $package_details["user_management_module"];
+                $package_details["banking_module"] = strtotime($module_activation_data['banking_expiry_date']) < time() ? 0 : $package_details["banking_module"];
+                $package_details["sale_module"] = strtotime($module_activation_data['sale_expiry_date']) < time() ? 0 : $package_details["sale_module"];
+                $package_details["leads_module"] = strtotime($module_activation_data['leads_expiry_date']) < time() ? 0 : $package_details["leads_module"]; // new module addition
+                
+                $package_details["hospital_system"] = strtotime($module_activation_data['hospital_expiry_date']) < time() ? 0 : $package_details["hospital_system"];
+                
+                $package_details["enable_restaurant"] = strtotime($module_activation_data['restaurant_expiry_date']) < time() ? 0 : $package_details["enable_restaurant"];
+                
+                $package_details["enable_duplicate_invoice"] = strtotime($module_activation_data['duplicate_invoice_expiry_date']) < time() ? 0 : $package_details["enable_duplicate_invoice"];
+                
+                $package_details["tasks_management"] = strtotime($module_activation_data['tasks_expiry_date']) < time() ? 0 : $package_details["tasks_management"];
+                
+                $package_details["enable_cheque_writing"] = strtotime($module_activation_data['cheque_expiry_date']) < time() ? 0 : $package_details["enable_cheque_writing"];
+                
+                $package_details["list_easy_payment"] = strtotime($module_activation_data['list_easy_expiry_date']) < time() ? 0 : $package_details["list_easy_payment"];
+                
+                $package_details["pump_operator_dashboard"] = strtotime($module_activation_data['pump_expiry_date']) < time() ? 0 : $package_details["pump_operator_dashboard"];
+                
+                $package_details["stock_taking_module"] = strtotime($module_activation_data['stock_taking_expiry_date']) < time() ? 0 : $package_details["stock_taking_module"];
+                
+                $package_details["installment_module"] = strtotime($module_activation_data['installment_module_expiry_date']) < time() ? 0 : $package_details["installment_module"];
+                
+                $package_details["ezy_products"] = strtotime($module_activation_data['ezy_expiry_date']) < time() ? 0 : $package_details["ezy_products"];
+                
+                
+                // doc 6104
+                $package_details["list_sms"] = strtotime($module_activation_data['list_sms_expiry_date']) < time() ? 0 : $package_details["list_sms"];
+                $package_details["enable_sms"] = strtotime($module_activation_data['enable_sms_expiry_date']) < time() ? 0 : $package_details["enable_sms"];
+                $package_details["notification_template_module"] = strtotime($module_activation_data['notification_template_expiry_date']) < time() ? 0 : $package_details["notification_template_module"];
+                
+                
+                // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                $package_details["products"] = strtotime($module_activation_data['products_expiry_date']) < time() ? 0 : $package_details["products"];
+                $package_details["purchase"] = strtotime($module_activation_data['purchase_expiry_date']) < time() ? 0 : $package_details["purchase"];
+                $package_details["stock_transfer"] = strtotime($module_activation_data['stock_transfer_expiry_date']) < time() ? 0 : $package_details["stock_transfer"];
+                $package_details["daily_review"] = strtotime($module_activation_data['daily_review_expiry_date']) < time() ? 0 : $package_details["daily_review"];
+                $package_details["service_staff"] = strtotime($module_activation_data['service_staff_expiry_date']) < time() ? 0 : $package_details["service_staff"];
+                $package_details["enable_subscription"] = strtotime($module_activation_data['enable_subscription_expiry_date']) < time() ? 0 : $package_details["enable_subscription"];
+                
+                $package_details["distribution_module"] = strtotime($module_activation_data['distribution_module_expiry_date']) < time() ? 0 : 1;
+                $package_details["spreadsheet"] = strtotime($module_activation_data['spreadsheet_expiry_date']) < time() ? 0 : 1;
+                $package_details["essentials_module"] = strtotime($module_activation_data['essentials_expiry_date']) < time() ? 0 : 1;
+                
+                $package_details["price_changes_module"] = strtotime($module_activation_data['price_changes_expiry_date']) < time() ? 0 : 1;
+                $package_details["day_end_module"] = strtotime($module_activation_data['day_end_expiry_date']) < time() ? 0 : 1;
+                $package_details["customer_interest_module"] = strtotime($module_activation_data['customer_interest_expiry_date']) < time() ? 0 : 1;
+                $package_details["issue_customer_bill"] = strtotime($module_activation_data['issue_customer_bill_expiry_date']) < time() ? 0 : 1;
+                $package_details["issue_customer_bill_vat"] = strtotime($module_activation_data['issue_customer_bill_vat_expiry_date']) < time() ? 0 : 1;
+                
+                $package_details["post_dated_cheque"] = strtotime($module_activation_data['post_dated_expiry_date']) < time() ? 0 : 1;
+                $package_details["vat_module"] = strtotime($module_activation_data['vat_expiry_date']) < time() ? 0 : 1;
+                $package_details["subscriptions_module"] = strtotime($module_activation_data['subscriptions_expiry_date']) < time() ? 0 : 1;
+                
+                $package_details["smsmodule_module"] = strtotime($module_activation_data['smsmodule_expiry_date']) < time() ? 0 : 1;
+                
+                $package_details["bakery_module"] = strtotime($module_activation_data['bakery_expiry_date']) < time() ? 0 : 1;
+                
+                
+                Subscription::where('id', $subscription->id)->update(['package_details' => json_encode($package_details)]);
+            }
+
+            $business_data['background_showing_type'] = $request->background_showing_type;
+            $business_data['customer_interest_deduct_option'] = !empty($request->customer_interest_deduct_option) ? $request->customer_interest_deduct_option : 0;
+            //upload background image file
+            if (!file_exists('./public/uploads/business_data/' . $id)) {
+                mkdir('./public/uploads/business_data/' . $id, 0777, true);
+            }
+            if ($request->hasfile('background_image')) {
+                $file = $request->file('background_image');
+                $extension = $file->getClientOriginalExtension();
+                $filename = time() . '.' . $extension;
+                $file->move('public/uploads/business_data/' . $id, $filename);
+                $uploadFileFicon = 'public/uploads/business_data/' . $id . '/' . $filename;
+                $business_data['background_image'] = $uploadFileFicon;
+            }
+            //upload logo image file
+            if (!file_exists('./public/uploads/business_data/' . $id)) {
+                mkdir('./public/uploads/business_data/' . $id, 0777, true);
+            }
+            if ($request->hasfile('logo')) {
+                $file = $request->file('logo');
+                $extension = $file->getClientOriginalExtension();
+                $logo_filename = time() . '.' . $extension;
+                $file->move('public/uploads/business_logos/', $logo_filename);
+                $business_data['logo'] = $logo_filename;
+            }
+
+            $business_data['day_end_enable'] = $request->day_end_enable == '1' ? 1 : 0;
+
+            Business::where('id', $id)->update($business_data);
+            
+
+            $output = ['success' => 1, 'msg' => __('lang_v1.success')];
+            return redirect()
+                ->action('\Modules\Superadmin\Http\Controllers\BusinessController@index')
+                ->with('status', $output);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // return "Line:" . $e->getLine() . "Message:" . $e->getMessage();
+
+            \Log::emergency("File:" . $e->getFile() . "Line:" . $e->getLine() . "Message:" . $e->getMessage());
+
+            $output = [
+                'success' => 0,
+                'msg' => __('messages.something_went_wrong')
+            ];
+
+            return back()->with('status', $output)->withInput();
+        }
+    }
+
+    public function getVarialbeSelected($option_id, $opt_vars)
+    {
+        if (!empty($opt_vars)) {
+            $opt_vars = json_decode($opt_vars);
+            if (!empty($opt_vars)) {
+                foreach ($opt_vars as $opt) {
+                    $op = CompanyPackageVariable::where('id', $opt)->first();
+                    if ($op->variable_options == $option_id) {
+                        return '1';
+                    }
+                }
+            }
+        }
+
+        return '0';
+    }
+
+    public function deleteAllPreviousAccountTransactions($business_id)
+    {
+        $transaction_account = AccountTransaction::leftjoin('transactions', 'account_transactions.transaction_id', 'transactions.id')
+            ->where('transactions.business_id', $business_id)->where('account_transactions.deleted_at', null)->select('account_transactions.id')->get();
+        $tansaction_payments = AccountTransaction::leftjoin('transaction_payments', 'account_transactions.transaction_payment_id', 'transaction_payments.id')
+            ->where('transaction_payments.business_id', $business_id)->where('account_transactions.deleted_at', null)->select('account_transactions.id')->get();
+        foreach ($transaction_account as $at) {
+            AccountTransaction::where('id', $at->id)->delete();
+        }
+        foreach ($tansaction_payments as $ap) {
+            AccountTransaction::where('id', $ap->id)->delete();
+        }
+    }
+
+    public function loginAsBusiness($id)
+    {
+
+        $business_util = new BusinessUtil;
+
+        $user = User::where('business_id', $id)->first();
+        Auth::loginUsingId($user->id);
+        $session_data = [
+            'id' => $user->id,
+            'surname' => $user->surname,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'business_id' => $user->business_id,
+            'language' => $user->language,
+        ];
+        $business = Business::findOrFail($user->business_id);
+
+        $currency = $business->currency;
+        $currency_data = [
+            'id' => $currency->id,
+            'code' => $currency->code,
+            'symbol' => $currency->symbol,
+            'thousand_separator' => $currency->thousand_separator,
+            'decimal_separator' => $currency->decimal_separator
+        ];
+        request()->session()->forget('user');
+        request()->session()->forget('business');
+        request()->session()->forget('currency');
+        request()->session()->forget('financial_year');
+        request()->session()->put('user', $session_data);
+        request()->session()->put('business', $business);
+        request()->session()->put('currency', $currency_data);
+        request()->session()->put('superadmin-logged-in', '1');
+
+        //set current financial year to session
+        $financial_year = $business_util->getCurrentFinancialYear($business->id);
+        request()->session()->put('financial_year', $financial_year);
+
+        return redirect('home');
+    }
+    public function backToSuperadmin()
+    {
+
+        $business_util = new BusinessUtil;
+
+        $user = User::where('business_id', 1)->first();
+        Auth::loginUsingId($user->id);
+        $session_data = [
+            'id' => $user->id,
+            'surname' => $user->surname,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'business_id' => $user->business_id,
+            'language' => $user->language,
+        ];
+        $business = Business::findOrFail($user->business_id);
+
+        $currency = $business->currency;
+        $currency_data = [
+            'id' => $currency->id,
+            'code' => $currency->code,
+            'symbol' => $currency->symbol,
+            'thousand_separator' => $currency->thousand_separator,
+            'decimal_separator' => $currency->decimal_separator
+        ];
+        request()->session()->forget('user');
+        request()->session()->forget('business');
+        request()->session()->forget('currency');
+        request()->session()->forget('financial_year');
+        
+        request()->session()->put('user', $session_data);
+        request()->session()->put('business', $business);
+        request()->session()->put('currency', $currency_data);
+        
+        request()->session()->forget('superadmin-logged-in');
+
+        //set current financial year to session
+        $financial_year = $business_util->getCurrentFinancialYear($business->id);
+        request()->session()->put('financial_year', $financial_year);
+
+        return redirect('home');
+    }
+}

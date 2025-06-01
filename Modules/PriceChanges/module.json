@@ -1,0 +1,16 @@
+{
+    "name": "PriceChanges",
+    "alias": "pricechanges",
+    "description": "",
+    "keywords": [],
+    "active": 1,
+    "order": 0,
+    "providers": [
+        "Modules\\PriceChanges\\Providers\\PriceChangesServiceProvider"
+    ],
+    "aliases": {},
+    "files": [
+        "start.php"
+    ],
+    "requires": []
+}

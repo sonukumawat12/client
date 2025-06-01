@@ -1,0 +1,214 @@
+/*
+* Prefixed by https://autoprefixer.github.io
+* PostCSS: v8.4.14,
+* Autoprefixer: v10.4.7
+* Browsers: last 4 version
+*/
+
+.g-center,
+.right-si {
+    margin: auto
+}
+
+.d-grid,
+.grid-3,
+.grid-lang-card {
+    display: -ms-grid;
+    display: grid
+}
+
+.modal {
+    overflow: auto !important
+}
+
+.has-feedback label~.form-control-feedback {
+    top: 37px
+}
+
+.modal-backdrop {
+    z-index: -1 !important
+}
+
+ul.nav-tabs {
+    width: 125% !important
+}
+
+.sign-in-outer {
+    height: 470px !important
+}
+
+.border_shadow {
+    border: 1px solid;
+    padding: 10px
+}
+
+.bg_grey {
+    background-color: #f2f1f1
+}
+
+.grid-gap-10 {
+    gap: 10px
+}
+
+.right-si {
+    width: 728px
+}
+
+.grid-3 {
+    -ms-grid-columns: 1fr 15px 1fr 15px 1fr;
+    grid-template-columns: repeat(3, 1fr);
+    -ms-grid-rows: 1fr;
+    grid-template-rows: 1fr;
+    height: 110px;
+    grid-gap: 15px
+}
+
+.grid-3>:first-child {
+    -ms-grid-row: 1;
+    -ms-grid-column: 1
+}
+
+.grid-3>:nth-child(2) {
+    -ms-grid-row: 1;
+    -ms-grid-column: 3
+}
+
+.grid-3>:nth-child(3) {
+    -ms-grid-row: 1;
+    -ms-grid-column: 5
+}
+
+.grid-lang-card {
+    -ms-grid-rows: auto 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+    background-color: #fff
+}
+
+.grid-lang-card div.active {
+    background-color: #dc3545
+}
+
+.grid-lang-card div:nth-child(2) {
+    -ms-flex-line-pack: center;
+    align-content: center;
+    color: #000;
+    display: -ms-grid;
+    display: grid
+}
+
+.d-grid-gap-12 {
+    grid-gap: 12px
+}
+
+.d-grid-gap-20 {
+    grid-gap: 20px
+}
+
+.grid-container {
+    width: 100%;
+    max-width: 1800px;
+    margin: auto;
+    padding: 0 20px
+}
+
+.grid-col-50,.iner-grid-col-50 {
+    -ms-grid-columns: 1fr 50%;
+    grid-template-columns: 1fr 50%
+}
+
+.btn-outline-dark:hover {
+    color: #fff;
+    background-color: #212529;
+    border-color: #212529
+}
+
+.btn-outline-dark {
+    color: #212529;
+    border-color: #212529
+}
+
+.leaderboard {
+    width: 728px;
+    height: 90px
+}
+
+.medium-ret {
+    width: 300px;
+    height: 120px
+}
+
+.grid-col-login{
+    -ms-grid-columns: 1fr 35% 35%;
+    grid-template-columns: 1fr 35% 35%
+}
+
+.grid-col-login_button{
+    -ms-grid-columns: auto auto auto;
+    grid-template-columns: auto auto auto;
+    -webkit-box-align: center;
+-ms-flex-align: center;
+    align-items: center;
+        }
+
+ #login-row .form-control {
+
+            height: 40px;
+        }
+
+@media only screen and (max-width:1550px) {
+    .grid-col-50 {
+        -ms-grid-columns: 1fr auto;
+        grid-template-columns: 1fr auto
+    }
+
+    .iner-grid-col-50 {
+        -ms-grid-columns: 1fr 50%;
+        grid-template-columns: 1fr 50%
+    }
+
+    .slot_6 {
+        width: 100%;
+        margin:auto
+    }
+}
+@media only screen and (min-width:901px) {
+
+.left-logo{
+    min-height: 202px;
+}
+}
+
+@media only screen and (max-width:900px) {
+    .grid-col-50 ,.iner-grid-col-50{
+        -ms-grid-columns: 100%;
+        grid-template-columns: 100%
+    }
+    .medium-ret{
+        margin:auto;
+    }
+
+    .mobile_block{
+        width: 100%;
+        margin: 10px auto;
+        float:none !important;
+    }
+    .medium-ret {
+        margin: auto auto 10px;
+      }
+}
+
+@media only screen and (max-width:750px) {
+    .d-grid {
+        display: block;
+        margin-bottom: 10px;
+    }
+    .grid-3, .grid-lang-card{
+        display: -ms-grid;
+        display: grid;
+    }
+    .right-si,
+    .w-auto-7 {
+        width: 100%
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "name": "Bakery",
+    "alias": "bakery",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Bakery\\Providers\\BakeryServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

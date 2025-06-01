@@ -1,0 +1,25 @@
+{
+    "name": "twf/myhealth",
+    "description": "",
+    "authors": [
+        {
+            "name": "bohdan",
+            "email": "bohdansolovie@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\MyHealth\\Providers\\MyHealthtServiceProvider"
+            ],
+            "aliases": {
+                
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\MyHealth\\": ""
+        }
+    }
+}
